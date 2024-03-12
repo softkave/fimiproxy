@@ -1,5 +1,6 @@
 import {faker} from '@faker-js/faker';
 import assert from 'assert';
+import {Request, Response} from 'express';
 import {OutgoingHttpHeaders} from 'http';
 import fetch, {HeadersInit} from 'node-fetch';
 import {endFimiproxy, startFimiproxyUsingConfig} from '../proxy';
@@ -17,6 +18,8 @@ import {
  * - connect, https
  * - http method, https fails if host not recognized
  * - http method, https
+ * - http source, http origin
+ * - https source, https origin
  */
 
 let expressArtifacts:
@@ -39,14 +42,12 @@ describe('proxy', () => {
     await startFimiproxyUsingConfig(config, false);
 
     assert(config.httpPort);
-    const {socket} = await startHttpConnectCall(
+    const {res} = await startHttpConnectCall(
       {host: 'localhost', port: config.httpPort},
       {host: 'www.google.com', path: '/', port: '80'}
     );
 
-    const {signature} = await parseHttpMessageFromSocket(socket);
-    assert(signature?.type === 'res');
-    expect(signature.statusCode).toBe(404);
+    expect(res.statusCode).toBe(404);
   });
 
   test('proxy, http, fails if host not recognized', async () => {
@@ -64,24 +65,39 @@ describe('proxy', () => {
   });
 
   test.each(['GET', 'POST'])('connect, http %s', async method => {
-    const config = generateTestFimiproxyConfig();
+    const originPort = faker.internet.port();
+    const config = generateTestFimiproxyConfig({
+      routes: [
+        {
+          originPort,
+          incomingHost: `localhost:${originPort}`,
+          originHost: 'localhost',
+          originProtocol: 'http:',
+        },
+      ],
+    });
     await startFimiproxyUsingConfig(config, false);
 
-    const originPort = faker.internet.port();
     const reqPath = '/';
     const reqHeaders: OutgoingHttpHeaders = {host: `localhost:${originPort}`};
     const reqBody = method === 'GET' ? undefined : '';
 
     const resStatusCode = 200;
-    const resHeaders = {};
+    const resHeaders = {'x-tag-text': "i'm not a tea pot"};
     const resBody = 'okay';
 
     expressArtifacts = await createExpressHttpServer(originPort);
-    const {app, httpServer} = expressArtifacts;
-    app.get('/', (req, res) => {
-      expect(reqHeaders).toMatchObject(req.headers);
-      res.status(resStatusCode).header(resHeaders).send(resBody);
-    });
+    const {app} = expressArtifacts;
+    const reqHandler = (req: Request, res: Response) => {
+      expect(req.headers).toMatchObject(reqHeaders);
+      res
+        .status(resStatusCode)
+        .header(resHeaders)
+        .send(req.body || resBody);
+    };
+
+    app.get('/', reqHandler);
+    app.post('/', reqHandler);
 
     assert(config.httpPort);
     const {socket} = await startHttpConnectCall(
@@ -99,32 +115,45 @@ describe('proxy', () => {
     const {headers, signature, body} = await parseHttpMessageFromSocket(socket);
 
     assert(signature?.type === 'res');
-    expect(signature.statusCode).toBe(resStatusCode);
+    expect(signature.statusCode).toBe(resStatusCode.toString());
     expect(body).toBe(resBody);
-    expect(headers).toMatchObject(reqHeaders);
-
-    httpServer.close();
+    expect(headers).toMatchObject(resHeaders);
   });
 
   test.each(['GET', 'POST'])('proxy, http %s', async method => {
-    const config = generateTestFimiproxyConfig();
+    const originPort = faker.internet.port();
+    const config = generateTestFimiproxyConfig({
+      routes: [
+        {
+          originPort,
+          incomingHost: `localhost:${originPort}`,
+          originHost: 'localhost',
+          originProtocol: 'http:',
+        },
+      ],
+    });
     await startFimiproxyUsingConfig(config, false);
 
-    const originPort = faker.internet.port();
+    const resStatusCode = 200;
+    const resHeaders = {'x-tag-text': ["i'm not a tea pot"]};
+    const resBody = faker.lorem.paragraph();
+
     const reqPath = '/';
     const reqHeaders: OutgoingHttpHeaders = {host: `localhost:${originPort}`};
-    const reqBody = method === 'GET' ? undefined : '';
-
-    const resStatusCode = 200;
-    const resHeaders = {};
-    const resBody = 'okay';
+    const reqBody = method === 'GET' ? undefined : resBody;
 
     expressArtifacts = await createExpressHttpServer(originPort);
-    const {app, httpServer} = expressArtifacts;
-    app.get('/', (req, res) => {
-      expect(reqHeaders).toMatchObject(req.headers);
-      res.status(resStatusCode).header(resHeaders).send(resBody);
-    });
+    const {app} = expressArtifacts;
+    const reqHandler = (req: Request, res: Response) => {
+      expect(req.headers).toMatchObject(reqHeaders);
+      res
+        .status(resStatusCode)
+        .header(resHeaders)
+        .send(req.body || resBody);
+    };
+
+    app.get('/', reqHandler);
+    app.post('/', reqHandler);
 
     assert(config.httpPort);
 
@@ -133,12 +162,10 @@ describe('proxy', () => {
       {method, body: reqBody, headers: reqHeaders as HeadersInit}
     );
     const actualResBody = await response.text();
-    const actualResHeaders = response.headers;
+    const actualResHeaders = response.headers.raw();
 
     expect(response.status).toBe(resStatusCode);
     expect(actualResBody).toBe(resBody);
-    expect(actualResHeaders).toMatchObject(reqHeaders);
-
-    httpServer.close();
+    expect(actualResHeaders).toMatchObject(resHeaders);
   });
 });

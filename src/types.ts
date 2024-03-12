@@ -3,7 +3,7 @@ import type {Server} from 'http';
 export interface FimiproxyRouteItem {
   originHost: string;
   originPort: number;
-  originProtocol: string;
+  originProtocol: 'http:' | 'https:';
   incomingHost: string;
 }
 

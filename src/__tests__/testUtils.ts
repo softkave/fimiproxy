@@ -80,23 +80,23 @@ export async function writeHttpMessageToSocket(
   body?: string
 ) {
   return new Promise<void>((resolve, reject) => {
-    socket.write(
+    const message =
       `${method} ${path} HTTP/1.1` +
-        kHttpPartSeparator +
-        Object.entries(headers)
-          .map(([key, value]) => key + kHttpHeaderKeyValueSeparator + value)
-          .join(kHttpPartSeparator) +
-        kHttpPartSeparator +
-        kHttpPartSeparator +
-        (body ? body + kHttpPartSeparator : ''),
-      error => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
+      kHttpPartSeparator +
+      Object.entries(headers)
+        .map(([key, value]) => key + kHttpHeaderKeyValueSeparator + value)
+        .join(kHttpPartSeparator) +
+      kHttpPartSeparator +
+      kHttpPartSeparator +
+      (body ? body + kHttpPartSeparator : '');
+
+    socket.write(message, error => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
       }
-    );
+    });
   });
 }
 
@@ -147,14 +147,14 @@ export function parseHttpMessage(message: string) {
   const headerParts = parts.slice(0, headersEndIndex);
   const headers = headerParts.reduce(
     (acc, part) => {
-      const [key, value] = part.split(kHttpHeaderKeyValueSeparator);
+      const [key, value] = part.split(kHttpHeaderKeyValueSeparator + ' ');
       acc[key] = value;
       return acc;
     },
     {} as Record<string, string>
   );
 
-  const body = parts.slice(headersEndIndex + 1);
+  const body = parts.slice(headersEndIndex + 1).join('');
 
   return {
     signature,

@@ -23,10 +23,10 @@ import {
 // TODO: make into class so we can have multiple fimiproxy instances
 let artifacts: FimiproxyRuntimeArtifacts = {};
 let routes: FimiproxyRoutingMap = {};
-let runtimeConfig: FimiproxyRuntimeConfig = {};
 
-function getDestination(incomingUrl: URL) {
-  return routes[incomingUrl.hostname.toLowerCase()];
+function getDestination(req: IncomingMessage) {
+  const host = (req.headers.host || '').toLowerCase();
+  return routes[host];
 }
 
 function proxyIncomingRequest(
@@ -35,8 +35,7 @@ function proxyIncomingRequest(
     req: IncomingMessage;
   }
 ) {
-  const incomingUrl = new URL(req.url || '', `http://${req.headers.host}`);
-  const destination = getDestination(incomingUrl);
+  const destination = getDestination(req);
 
   if (!destination) {
     res.writeHead(404, {'Content-Type': 'text/plain'});
@@ -44,6 +43,8 @@ function proxyIncomingRequest(
     return;
   }
 
+  const reqHeaders = req.headers;
+  const incomingUrl = new URL(req.url || '', `http://${reqHeaders.host}`);
   const {pathname, search, hash} = incomingUrl;
   const options: RequestOptions = {
     port: destination.originPort,
@@ -54,10 +55,43 @@ function proxyIncomingRequest(
     headers: req.headers,
   };
 
-  const originReq = request(options);
-  originReq.pipe(res);
-  req.pipe(originReq);
-  originReq.end();
+  const oReq = request(options, oRes => {
+    res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
+    oRes.on('data', chunk => {
+      res.write(chunk);
+    });
+    oRes.on('end', () => {
+      res.end();
+    });
+    oRes.on('error', error => {
+      const fAddr = format(oRes.socket?.address);
+      const fDestination = format(destination);
+      console.log(`error with res from origin ${fAddr} | ${fDestination}`);
+      console.error(error);
+      res.end();
+    });
+  });
+
+  oReq.on('error', error => {
+    const fAddr = format(oReq.socket?.address);
+    const fDestination = format(destination);
+    console.log(`error with req to origin ${fAddr} | ${fDestination}`);
+    console.error(error);
+    res.writeHead(500, STATUS_CODES[500], {}).end();
+  });
+
+  req.on('data', chunk => {
+    oReq.write(chunk);
+  });
+  req.on('end', () => {
+    oReq.end();
+  });
+  req.on('error', error => {
+    const fAddr = format(req.socket.address);
+    console.log(`error with req from ${fAddr}`);
+    console.error(error);
+    res.writeHead(500, STATUS_CODES[500], {}).end();
+  });
 }
 
 function proxyIncomingConnect(
@@ -65,15 +99,19 @@ function proxyIncomingConnect(
   clientSocket: Duplex,
   head: Buffer
 ) {
-  const incomingUrl = new URL(req.url || '', `http://${req.headers.host}`);
-  const destination = getDestination(incomingUrl);
+  const destination = getDestination(req);
 
   if (!destination) {
     clientSocket.write(
-      `HTTP/1.1 404 ${STATUS_CODES[404]}\r\n` +
-        'Proxy-agent: fimiproxy\r\n' +
-        '\r\n'
+      `HTTP/1.1 404 ${STATUS_CODES[404]}\r\n` + '\r\n',
+      'utf-8',
+      error => {
+        if (error) {
+          console.error(error);
+        }
+      }
     );
+    clientSocket.on('error', console.error.bind(console));
     clientSocket.end();
     return;
   }
@@ -82,11 +120,7 @@ function proxyIncomingConnect(
     destination.originPort,
     destination.originHost,
     () => {
-      clientSocket.write(
-        'HTTP/1.1 200 Connection Established\r\n' +
-          'Proxy-agent: fimiproxy\r\n' +
-          '\r\n'
-      );
+      clientSocket.write('HTTP/1.1 200 Connection Established\r\n' + '\r\n');
       serverSocket.write(head);
       serverSocket.pipe(clientSocket);
       clientSocket.pipe(serverSocket);
@@ -99,6 +133,9 @@ async function createHttpProxy() {
 
   proxy.on('request', proxyIncomingRequest);
   proxy.on('connect', proxyIncomingConnect);
+  proxy.on('error', () => {});
+  proxy.on('tlsClientError', () => {});
+  proxy.on('clientError', () => {});
 
   return proxy;
 }
@@ -117,6 +154,9 @@ async function createHttpsProxy(
 
   proxy.on('request', proxyIncomingRequest);
   proxy.on('connect', proxyIncomingConnect);
+  proxy.on('error', () => {});
+  proxy.on('tlsClientError', () => {});
+  proxy.on('clientError', () => {});
 
   return proxy;
 }
@@ -178,7 +218,6 @@ export async function endFimiproxy(exitProcess = true) {
     artifacts.httpsProxy && closeProxy(artifacts.httpsProxy),
   ]);
   artifacts = {};
-  runtimeConfig = {};
   routes = {};
   console.log('fimiproxy ended');
 
@@ -245,7 +284,6 @@ export async function startFimiproxyUsingConfig(
 export async function startFimiproxyUsingConfigFile(filepath: string) {
   const file = await fsPromises.readFile(filepath, 'utf-8');
   const config = JSON.parse(file);
-  runtimeConfig = config;
   await startFimiproxyUsingConfig(config);
 }
 
