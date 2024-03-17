@@ -1,6 +1,6 @@
 {
   "name": "fimiproxy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "simple HTTP and HTTPS reverse proxy",
   "author": {
     "email": "ywordk@gmail.com",
@@ -27,7 +27,7 @@
   },
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",
-  "bin": "build/bin.js",
+  "bin": "build/src/bin.js",
   "files": [
     "build/src/!(__tests__|testutils|private)*(js|d.ts)"
   ],
