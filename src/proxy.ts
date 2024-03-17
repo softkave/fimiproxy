@@ -264,7 +264,10 @@ async function exposeServer(server?: Server, port?: string) {
 function prepareRoutesFromConfig(config: FimiproxyRuntimeConfig) {
   assert(config.routes, 'routes not configured');
   routes = config.routes.reduce((acc, route) => {
-    acc[route.incomingHostAndPort.toLowerCase()] = route;
+    const incomingHostAndPort = route.incomingHostAndPort.toLowerCase();
+    const originTxt = `${route.originProtocol}//${route.originHost}:${route.originPort}`;
+    acc[incomingHostAndPort] = route;
+    console.log(`route: ${incomingHostAndPort} > ${originTxt}`);
     return acc;
   }, {} as FimiproxyRoutingMap);
 }
@@ -283,6 +286,14 @@ export async function startFimiproxyUsingConfig(
     exposeServer(httpProxy, config.httpPort),
     exposeServer(httpsProxy, config.httpsPort),
   ]);
+
+  if (httpProxy) {
+    console.log(`http proxy listening on ${config.httpPort}`);
+  }
+
+  if (httpsProxy) {
+    console.log(`https proxy listening on ${config.httpsPort}`);
+  }
 
   artifacts = {};
   artifacts.httpProxy = httpProxy;

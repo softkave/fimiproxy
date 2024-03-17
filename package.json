@@ -1,6 +1,6 @@
 {
   "name": "fimiproxy",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "simple HTTP and HTTPS reverse proxy",
   "author": {
     "email": "ywordk@gmail.com",
