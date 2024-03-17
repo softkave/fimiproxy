@@ -27,6 +27,12 @@ import {
 // TODO: make into class so we can have multiple fimiproxy instances
 // TODO: prefer https over http when there's both origin servers
 // TODO: proper error handling
+// TODO: return artifacts from start calls so callers can perform explicit graceful shutdowns
+// TODO: add validation checks to config file, and config
+// TODO: prevent multiple start calls until transition to class-based encapsulation
+// TODO: use http-graceful-shutdown for graceful shutdown implementation
+// TODO: what to do about CONNECT calls
+// TODO: better and encompassing error logging, usage logging, and metrics logging
 
 let artifacts: FimiproxyRuntimeArtifacts = {};
 let routes: FimiproxyRoutingMap = {};
@@ -139,7 +145,11 @@ async function createHttpProxy() {
   const proxy = createHttpServer();
 
   proxy.on('request', proxyIncomingRequest);
-  proxy.on('connect', proxyIncomingConnect);
+
+  // TODO: exclude CONNECT from first release because it's a bit slow, there's
+  // no use case for it, and testing with an HTTPS origin is unfeasible at the
+  // moment
+  // proxy.on('connect', proxyIncomingConnect);
   proxy.on('error', console.error.bind(console));
   proxy.on('tlsClientError', console.error.bind(console));
   proxy.on('clientError', console.error.bind(console));
@@ -151,7 +161,11 @@ async function createHttpsProxy(certificate: string, privateKey: string) {
   const proxy = createHttpsServer({key: privateKey, cert: certificate});
 
   proxy.on('request', proxyIncomingRequest);
-  proxy.on('connect', proxyIncomingConnect);
+
+  // TODO: exclude CONNECT from first release because it's a bit slow, there's
+  // no use case for it, and testing with an HTTPS origin is unfeasible at the
+  // moment
+  // proxy.on('connect', proxyIncomingConnect);
   proxy.on('error', console.error.bind(console));
   proxy.on('tlsClientError', console.error.bind(console));
   proxy.on('clientError', console.error.bind(console));
@@ -257,7 +271,8 @@ function prepareRoutesFromConfig(config: FimiproxyRuntimeConfig) {
 
 export async function startFimiproxyUsingConfig(
   config: FimiproxyRuntimeConfig,
-  shouldHandleGracefulShutdown = true
+  shouldHandleGracefulShutdown = true,
+  exitProcessOnShutdown = true
 ) {
   prepareRoutesFromConfig(config);
   const [httpProxy, httpsProxy] = await Promise.all([
@@ -286,8 +301,8 @@ export async function startFimiproxyUsingConfig(
   // });
 
   if (shouldHandleGracefulShutdown) {
-    process.on('SIGINT', endFimiproxy);
-    process.on('SIGTERM', endFimiproxy);
+    process.on('SIGINT', () => endFimiproxy(exitProcessOnShutdown));
+    process.on('SIGTERM', () => endFimiproxy(exitProcessOnShutdown));
   }
 }
 

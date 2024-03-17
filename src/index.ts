@@ -1,3 +1,2 @@
-import {startFimiproxyUsingProcessArgs} from './proxy';
-
-startFimiproxyUsingProcessArgs();
+export * from './proxy';
+export * from './types';

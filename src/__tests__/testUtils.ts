@@ -3,7 +3,6 @@ import express from 'express';
 import forge from 'node-forge';
 import assert from 'node:assert';
 import console from 'node:console';
-import {promises as fsPromises} from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import {Socket} from 'node:net';
@@ -30,14 +29,6 @@ async function createHttpsServer(
 ) {
   if (!credentials) {
     const {publicKey, privateKey} = await generatePublicPrivateKeyPair();
-    // const {privateKeyFilepath, publicKeyFilepath} =
-    //   await generatePublicPrivateKeyPair();
-    // const privateKeyFilepath = './certs/private-key.pem';
-    // const publicKeyFilepath = './certs/public-key.pem';
-    // const [publicKey, privateKey] = await Promise.all([
-    //   fsPromises.readFile(publicKeyFilepath, 'utf-8'),
-    //   fsPromises.readFile(privateKeyFilepath, 'utf-8'),
-    // ]);
     credentials = {key: privateKey, cert: publicKey};
   }
 
@@ -114,6 +105,7 @@ export async function writeHttpMessageToSocket(
   body?: string
 ) {
   return new Promise<void>((resolve, reject) => {
+    // TODO: when it's TLS/HTTPS origin server, how do we encrypt message?
     const message =
       `${method} ${path} HTTP/1.1` +
       kHttpPartSeparator +
@@ -233,17 +225,6 @@ export async function generateTestFimiproxyConfig(
   const credentials = seed?.exposeHttpsProxy
     ? await generatePublicPrivateKeyPair()
     : undefined;
-  // const cert: {publicKey?: string; privateKey?: string} = {};
-
-  // if (credentials) {
-  //   const {privateKeyFilepath, publicKeyFilepath} = credentials;
-  //   const [publicKey, privateKey] = await Promise.all([
-  //     fsPromises.readFile(publicKeyFilepath, 'utf-8'),
-  //     fsPromises.readFile(privateKeyFilepath, 'utf-8'),
-  //   ]);
-  //   cert.privateKey = privateKey;
-  //   cert.publicKey = publicKey;
-  // }
 
   return {
     exposeHttpProxy: false,
@@ -251,12 +232,8 @@ export async function generateTestFimiproxyConfig(
     httpPort: faker.internet.port().toString(),
     httpsPort: faker.internet.port().toString(),
     routes: [],
-    // httpsPublicKey: cert?.publicKey,
-    // httpsPrivateKey: cert?.privateKey,
     httpsPublicKey: credentials?.publicKey,
     httpsPrivateKey: credentials?.privateKey,
-    // httpsPrivateKeyFilepath: './certs/private-key.pem',
-    // httpsPublicKeyFilepath: './certs/public-key.pem',
     ...seed,
   };
 }
@@ -323,16 +300,7 @@ export async function generatePublicPrivateKeyPair() {
   const pemPublicKey = pki.certificateToPem(cert);
   const pemPrivateKey = pki.privateKeyToPem(keys.privateKey);
 
-  const publicKeyFilepath = './certs/test-public-key.pem';
-  const privateKeyFilepath = './certs/test-private-key.pem';
-  await Promise.all([
-    fsPromises.writeFile(publicKeyFilepath, pemPublicKey, 'utf-8'),
-    fsPromises.writeFile(privateKeyFilepath, pemPrivateKey, 'utf-8'),
-  ]);
-
   return {
-    publicKeyFilepath,
-    privateKeyFilepath,
     privateKey: pemPrivateKey,
     publicKey: pemPublicKey,
   };
