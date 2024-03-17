@@ -295,6 +295,8 @@ export async function startFimiproxyUsingConfig(
     console.log(`https proxy listening on ${config.httpsPort}`);
   }
 
+  console.log(`process pid: ${process.pid}`);
+
   artifacts = {};
   artifacts.httpProxy = httpProxy;
   artifacts.httpsProxy = httpsProxy;
