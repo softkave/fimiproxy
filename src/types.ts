@@ -4,7 +4,7 @@ export interface FimiproxyRouteItem {
   originHost: string;
   originPort: number;
   originProtocol: 'http:' | 'https:';
-  incomingHost: string;
+  incomingHostAndPort: string;
 }
 
 export type FimiproxyRoutingMap = Record<

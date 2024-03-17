@@ -1,56 +1,85 @@
 import {faker} from '@faker-js/faker';
 import express from 'express';
-import {generateKeyPair} from 'node:crypto';
-import fs from 'node:fs';
+import forge from 'node-forge';
+import assert from 'node:assert';
+import console from 'node:console';
+import {promises as fsPromises} from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import {Socket} from 'node:net';
-import {promisify} from 'node:util';
 import {FimiproxyRuntimeConfig} from '../types';
+
+export type FimiporxyHttpProtocol = 'http:' | 'https:';
 
 const kHttpPartSeparator = '\r\n';
 const kHttpHeaderKeyValueSeparator = ':';
 
-export async function createExpressHttpServer(port: string | number) {
-  const app = express();
+async function createHttpServer(port: string | number, app: express.Express) {
   const httpServer = http.createServer(app);
-
-  return new Promise<{app: express.Express; httpServer: http.Server}>(
-    resolve => {
-      httpServer.listen(port, () => {
-        resolve({app, httpServer});
-      });
-    }
-  );
+  return new Promise<{httpServer: http.Server}>(resolve => {
+    httpServer.listen(port, () => {
+      resolve({httpServer});
+    });
+  });
 }
 
-export async function createExpressHttpsServer(
-  port: string,
-  httpsPublicKeyFilepath: string,
-  httpsPrivateKeyFilepath: string
+async function createHttpsServer(
+  port: string | number,
+  app: express.Express,
+  credentials?: {key: string; cert: string}
 ) {
-  const app = express();
-  const [certificate, privateKey] = await Promise.all([
-    fs.promises.readFile(httpsPublicKeyFilepath, 'utf8'),
-    fs.promises.readFile(httpsPrivateKeyFilepath, 'utf8'),
-  ]);
-  const credentials = {key: privateKey, cert: certificate};
-  const httpsServer = https.createServer(credentials, app);
+  if (!credentials) {
+    const {publicKey, privateKey} = await generatePublicPrivateKeyPair();
+    // const {privateKeyFilepath, publicKeyFilepath} =
+    //   await generatePublicPrivateKeyPair();
+    // const privateKeyFilepath = './certs/private-key.pem';
+    // const publicKeyFilepath = './certs/public-key.pem';
+    // const [publicKey, privateKey] = await Promise.all([
+    //   fsPromises.readFile(publicKeyFilepath, 'utf-8'),
+    //   fsPromises.readFile(privateKeyFilepath, 'utf-8'),
+    // ]);
+    credentials = {key: privateKey, cert: publicKey};
+  }
 
-  return new Promise<{app: express.Express; httpsServer: http.Server}>(
-    resolve => {
-      httpsServer.listen(port, () => {
-        resolve({app, httpsServer});
-      });
-    }
-  );
+  const httpsServer = https.createServer(credentials, app);
+  return new Promise<{
+    httpsServer: http.Server;
+    credentials: {key: string; cert: string};
+  }>(resolve => {
+    httpsServer.listen(port, () => {
+      assert(credentials);
+      resolve({httpsServer, credentials});
+    });
+  });
+}
+
+export async function createExpressHttpServer(props: {
+  protocol: FimiporxyHttpProtocol | FimiporxyHttpProtocol[];
+  httpPort?: string | number;
+  httpsPort?: string | number;
+  credentials?: {key: string; cert: string};
+}) {
+  const {protocol, httpPort, httpsPort, credentials} = props;
+  const app = express();
+  const [httpServer, httpsServer] = await Promise.all([
+    protocol === 'http:' && httpPort
+      ? createHttpServer(httpPort, app)
+      : undefined,
+    protocol === 'https:' && httpsPort
+      ? createHttpsServer(httpsPort, app, credentials)
+      : undefined,
+  ]);
+
+  return {app, ...httpServer, ...httpsServer};
 }
 
 export async function startHttpConnectCall(
   connectOpts: Required<Pick<http.RequestOptions, 'port' | 'host'>>,
-  originOpts: Required<Pick<http.RequestOptions, 'port' | 'host' | 'path'>>
+  originOpts: Required<Pick<http.RequestOptions, 'port' | 'host' | 'path'>>,
+  protocol: FimiporxyHttpProtocol
 ) {
   const options: http.RequestOptions = {
+    protocol,
     port: connectOpts.port,
     host: connectOpts.host,
     path: originOpts.path,
@@ -60,13 +89,18 @@ export async function startHttpConnectCall(
       host: originOpts.host + ':' + originOpts.port,
     },
   };
-  const req = http.request(options);
+  const req =
+    protocol === 'http:' ? http.request(options) : https.request(options);
   req.end();
 
   return new Promise<{res: http.IncomingMessage; socket: Socket; head: Buffer}>(
-    resolve => {
+    (resolve, reject) => {
       req.on('connect', (res, socket, head) => {
         resolve({res, socket, head});
+      });
+      req.on('error', error => {
+        console.error(error);
+        reject(error);
       });
     }
   );
@@ -170,9 +204,13 @@ export async function parseHttpMessageFromSocket(socket: Socket) {
     chunks.push(chunk.toString());
   });
 
-  return new Promise<ReturnType<typeof parseHttpMessage>>(resolve => {
+  return new Promise<ReturnType<typeof parseHttpMessage>>((resolve, reject) => {
     socket.on('end', () => {
       resolve(parseHttpMessage(chunks.join()));
+    });
+    socket.on('error', error => {
+      console.error(error);
+      reject(error);
     });
   });
 }
@@ -189,25 +227,178 @@ export async function closeHttpServer(server: http.Server) {
   });
 }
 
-export function generateTestFimiproxyConfig(
+export async function generateTestFimiproxyConfig(
   seed: Partial<FimiproxyRuntimeConfig> = {}
-): FimiproxyRuntimeConfig {
+): Promise<FimiproxyRuntimeConfig> {
+  const credentials = seed?.exposeHttpsProxy
+    ? await generatePublicPrivateKeyPair()
+    : undefined;
+  // const cert: {publicKey?: string; privateKey?: string} = {};
+
+  // if (credentials) {
+  //   const {privateKeyFilepath, publicKeyFilepath} = credentials;
+  //   const [publicKey, privateKey] = await Promise.all([
+  //     fsPromises.readFile(publicKeyFilepath, 'utf-8'),
+  //     fsPromises.readFile(privateKeyFilepath, 'utf-8'),
+  //   ]);
+  //   cert.privateKey = privateKey;
+  //   cert.publicKey = publicKey;
+  // }
+
   return {
-    exposeHttpProxy: true,
+    exposeHttpProxy: false,
     exposeHttpsProxy: false,
     httpPort: faker.internet.port().toString(),
     httpsPort: faker.internet.port().toString(),
     routes: [],
+    // httpsPublicKey: cert?.publicKey,
+    // httpsPrivateKey: cert?.privateKey,
+    httpsPublicKey: credentials?.publicKey,
+    httpsPrivateKey: credentials?.privateKey,
+    // httpsPrivateKeyFilepath: './certs/private-key.pem',
+    // httpsPublicKeyFilepath: './certs/public-key.pem',
     ...seed,
   };
 }
 
-const promisifiedGenerateKeyPair = promisify(generateKeyPair);
-
 export async function generatePublicPrivateKeyPair() {
-  return await promisifiedGenerateKeyPair('rsa', {
-    modulusLength: 1024,
-    publicKeyEncoding: {type: 'spki', format: 'pem'},
-    privateKeyEncoding: {type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc'},
-  });
+  // see https://github.com/digitalbazaar/forge?tab=readme-ov-file#x509
+  const pki = forge.pki;
+  const keys = pki.rsa.generateKeyPair(2048);
+  const cert = pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date();
+  cert.validity.notAfter = new Date();
+  cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+  const attrs = [
+    {name: 'commonName', value: 'fimidara.com'},
+    {name: 'countryName', value: 'US'},
+    {shortName: 'ST', value: 'Indiana'},
+    {name: 'localityName', value: 'Carmel'},
+    {name: 'organizationName', value: 'softkave'},
+    {shortName: 'OU', value: 'fimidara'},
+  ];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([
+    {name: 'basicConstraints', cA: true},
+    {
+      name: 'keyUsage',
+      keyCertSign: true,
+      digitalSignature: true,
+      nonRepudiation: true,
+      keyEncipherment: true,
+      dataEncipherment: true,
+    },
+    {
+      name: 'extKeyUsage',
+      serverAuth: true,
+      clientAuth: true,
+      codeSigning: true,
+      emailProtection: true,
+      timeStamping: true,
+    },
+    {
+      name: 'nsCertType',
+      client: true,
+      server: true,
+      email: true,
+      objsign: true,
+      sslCA: true,
+      emailCA: true,
+      objCA: true,
+    },
+    // {
+    //   name: 'subjectAltName',
+    //   altNames: [
+    //     {/** URI */ type: 6, value: 'http://example.org/webid#me'},
+    //     {/** IP */ type: 7, ip: '127.0.0.1'},
+    //   ],
+    // },
+    // {name: 'subjectKeyIdentifier'},
+  ]);
+  cert.sign(keys.privateKey);
+
+  const pemPublicKey = pki.certificateToPem(cert);
+  const pemPrivateKey = pki.privateKeyToPem(keys.privateKey);
+
+  const publicKeyFilepath = './certs/test-public-key.pem';
+  const privateKeyFilepath = './certs/test-private-key.pem';
+  await Promise.all([
+    fsPromises.writeFile(publicKeyFilepath, pemPublicKey, 'utf-8'),
+    fsPromises.writeFile(privateKeyFilepath, pemPrivateKey, 'utf-8'),
+  ]);
+
+  return {
+    publicKeyFilepath,
+    privateKeyFilepath,
+    privateKey: pemPrivateKey,
+    publicKey: pemPublicKey,
+  };
+}
+
+type MixAndMatchObjectUsing<T extends object> = {
+  [K in keyof T]: () => Array<T[K]>;
+};
+
+/**
+ * `incrementMixAndMatchIterator([1,1,1], [2,2,2])` should produce
+ * - `iterator === [1,1,2]`
+ *
+ * `incrementMixAndMatchIterator([1,1,2], [2,2,2])` should produce
+ * - `iterator === [1,2,0]`
+ *
+ * `incrementMixAndMatchIterator([1,2,2], [2,2,2])` should produce
+ * - `iterator === [2,0,0]`
+ *
+ * `incrementMixAndMatchIterator([2,2,2], [2,2,2])` should produce
+ * - `iterator === [2,2,2]`
+ */
+export function incrementMixAndMatchIterator(
+  iterator: number[],
+  max: number[]
+) {
+  for (let i = iterator.length - 1; i >= 0; i--) {
+    const v = iterator[i] + 1;
+    const m = max[i];
+
+    if (v < m) {
+      iterator[i] = v;
+      iterator.fill(0, i + 1);
+      return true;
+    } else {
+      continue;
+    }
+  }
+
+  return false;
+}
+
+export function mixAndMatchObject<T extends Record<string, unknown>>(
+  seed: MixAndMatchObjectUsing<T>
+) {
+  const fields = Object.keys(seed);
+  const seedFields = fields.map(field => seed[field as keyof T]());
+  const max = seedFields.map(seedField => seedField.length);
+  const iterator: number[] = Array(fields.length).fill(0);
+  const result: T[] = [];
+
+  for (
+    let continueIteration = true;
+    continueIteration;
+    continueIteration = incrementMixAndMatchIterator(iterator, max)
+  ) {
+    const value = iterator.reduce(
+      (acc, v, i) => {
+        const k = fields[i];
+        acc[k] = seedFields[i][v];
+        return acc;
+      },
+      {} as Record<string, unknown>
+    );
+    result.push(value as T);
+  }
+
+  return result;
 }
