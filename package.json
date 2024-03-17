@@ -1,6 +1,6 @@
 {
   "name": "fimiproxy",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "simple HTTP and HTTPS reverse proxy",
   "author": {
     "email": "ywordk@gmail.com",
@@ -29,8 +29,8 @@
   "types": "build/src/index.d.ts",
   "bin": "build/src/bin.js",
   "files": [
-    "build/src/*/{*.js,!(__tests__)/**/*.js}",
-    "build/src/*/{*.d.ts,!(__tests__)/**/*.d.ts}"
+    "build/src/{*.js,!(__tests__)/**/*.js}",
+    "build/src/{*.d.ts,!(__tests__)/**/*.d.ts}"
   ],
   "scripts": {
     "test": "cross-env NODE_TLS_REJECT_UNAUTHORIZED='0' jest --config=jest.config.ts --detectOpenHandles",
