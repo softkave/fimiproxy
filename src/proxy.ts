@@ -59,6 +59,15 @@ function proxyIncomingRequest(
     console.error(error);
   });
 
+  const host = (req.headers.host || '').toLowerCase();
+  console.log(
+    `${host} routed to ${
+      destination
+        ? `${destination.originProtocol}//${destination.originHost}:${destination.originPort}`
+        : 'not found'
+    }`
+  );
+
   if (!destination) {
     res.writeHead(404, {'Content-Type': 'text/plain'});
     res.end(STATUS_CODES[404]);
