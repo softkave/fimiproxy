@@ -1,6 +1,6 @@
 {
   "name": "fimiproxy",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Simple HTTP and HTTPS reverse proxy",
   "author": {
     "email": "ywordk@gmail.com",
@@ -22,8 +22,7 @@
   },
   "homepage": "https://github.com/softkave/fimiproxy",
   "engines": {
-    "node": "21.x",
-    "npm": "10.x"
+    "node": ">=13"
   },
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",

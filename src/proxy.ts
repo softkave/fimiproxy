@@ -24,16 +24,6 @@ import {
   FimiproxyRuntimeConfig,
 } from './types';
 
-// TODO: make into class so we can have multiple fimiproxy instances
-// TODO: prefer https over http when there's both origin servers
-// TODO: proper error handling
-// TODO: return artifacts from start calls so callers can perform explicit graceful shutdowns
-// TODO: add validation checks to config file, and config
-// TODO: prevent multiple start calls until transition to class-based encapsulation
-// TODO: use http-graceful-shutdown for graceful shutdown implementation
-// TODO: what to do about CONNECT calls
-// TODO: better and encompassing error logging, usage logging, and metrics logging
-
 let artifacts: FimiproxyRuntimeArtifacts = {};
 let routes: FimiproxyRoutingMap = {};
 
@@ -48,13 +38,13 @@ function proxyIncomingRequest(
 ) {
   const destination = getDestination(req);
   req.on('error', error => {
-    const fAddr = format(req.socket.address);
+    const fAddr = format(req.socket.address());
     console.log(`error with req from ${fAddr}`);
     console.error(error);
     res.writeHead(500, STATUS_CODES[500], {}).end();
   });
   res.on('error', error => {
-    const fAddr = format(req.socket.address);
+    const fAddr = format(req.socket.address());
     console.log(`error with res to ${fAddr}`);
     console.error(error);
   });
@@ -93,7 +83,7 @@ function proxyIncomingRequest(
     oRes.on('data', chunk => res.write(chunk));
     oRes.on('end', () => res.end());
     oRes.on('error', error => {
-      const fAddr = format(oRes.socket?.address);
+      const fAddr = format(oRes.socket?.address());
       const fDestination = format(destination);
       console.log(`error with res from origin ${fAddr} | ${fDestination}`);
       console.error(error);
@@ -102,7 +92,7 @@ function proxyIncomingRequest(
   });
 
   oReq.on('error', error => {
-    const fAddr = format(oReq.socket?.address);
+    const fAddr = format(oReq.socket?.address());
     const fDestination = format(destination);
     console.log(`error with req to origin ${fAddr} | ${fDestination}`);
     console.error(error);
@@ -119,8 +109,14 @@ function proxyIncomingConnect(
   head: Buffer
 ) {
   const destination = getDestination(req);
-  clientSocket.on('error', console.error.bind(console));
-  req.on('error', console.error.bind(console));
+  clientSocket.on('error', error => {
+    console.log('proxyIncomingConnect clientSocket error');
+    console.error(error);
+  });
+  req.on('error', error => {
+    console.log('proxyIncomingConnect req error');
+    console.error(error);
+  });
 
   if (!destination) {
     clientSocket.write(
@@ -128,6 +124,7 @@ function proxyIncomingConnect(
       'utf-8',
       error => {
         if (error) {
+          console.log('proxyIncomingConnect clientSocket write error');
           console.error(error);
         }
       }
@@ -147,7 +144,10 @@ function proxyIncomingConnect(
     }
   );
 
-  serverSocket.on('error', console.error.bind(console));
+  serverSocket.on('error', error => {
+    console.log('proxyIncomingConnect serverSocket write error');
+    console.error(error);
+  });
 }
 
 async function createHttpProxy() {
@@ -159,9 +159,18 @@ async function createHttpProxy() {
   // no use case for it, and testing with an HTTPS origin is unfeasible at the
   // moment
   // proxy.on('connect', proxyIncomingConnect);
-  proxy.on('error', console.error.bind(console));
-  proxy.on('tlsClientError', console.error.bind(console));
-  proxy.on('clientError', console.error.bind(console));
+  proxy.on('error', error => {
+    console.log('createHttpProxy proxy error');
+    console.error(error);
+  });
+  proxy.on('tlsClientError', error => {
+    console.log('createHttpProxy tlsClientError');
+    console.error(error);
+  });
+  proxy.on('clientError', error => {
+    console.log('createHttpProxy clientError');
+    console.error(error);
+  });
 
   return proxy;
 }
@@ -175,9 +184,18 @@ async function createHttpsProxy(certificate: string, privateKey: string) {
   // no use case for it, and testing with an HTTPS origin is unfeasible at the
   // moment
   // proxy.on('connect', proxyIncomingConnect);
-  proxy.on('error', console.error.bind(console));
-  proxy.on('tlsClientError', console.error.bind(console));
-  proxy.on('clientError', console.error.bind(console));
+  proxy.on('error', error => {
+    console.log('createHttpsProxy error');
+    console.error(error);
+  });
+  proxy.on('tlsClientError', error => {
+    console.log('createHttpsProxy tlsClientError');
+    console.error(error);
+  });
+  proxy.on('clientError', error => {
+    console.log('createHttpsProxy clientError');
+    console.error(error);
+  });
 
   return proxy;
 }
@@ -234,6 +252,7 @@ async function closeProxy(proxy: Server): Promise<void> {
   return new Promise(resolve => {
     proxy.close(error => {
       if (error) {
+        console.log(`Error closing proxy for addr ${format(addr)}`);
         console.error(error);
       }
 
