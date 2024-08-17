@@ -3,6 +3,7 @@ import assert from 'assert';
 import {Request, Response} from 'express';
 import {OutgoingHttpHeaders} from 'http';
 import fetch, {HeadersInit} from 'node-fetch';
+import {afterEach, describe, expect, test} from 'vitest';
 import {endFimiproxy, startFimiproxyUsingConfig} from '../proxy';
 import {
   FimiporxyHttpProtocol,
@@ -10,9 +11,6 @@ import {
   createExpressHttpServer,
   generateTestFimiproxyConfig,
   mixAndMatchObject,
-  parseHttpMessageFromSocket,
-  startHttpConnectCall,
-  writeHttpMessageToSocket,
 } from './testUtils';
 
 type TestReverseProxyParams = {
@@ -37,33 +35,6 @@ afterEach(async () => {
 });
 
 describe('proxy', () => {
-  test.skip.each(['http:', 'https:'] as FimiporxyHttpProtocol[])(
-    'connect, %s, fails if host not recognized',
-    async protocol => {
-      const config = await generateTestFimiproxyConfig({
-        exposeHttpProxy: protocol === 'http:',
-        exposeHttpsProxy: protocol === 'https:',
-      });
-      await startFimiproxyUsingConfig(config, false);
-
-      const port =
-        protocol === 'http:'
-          ? config.httpPort
-          : protocol === 'https:'
-          ? config.httpsPort
-          : undefined;
-      assert(port);
-
-      const {res} = await startHttpConnectCall(
-        {port, host: 'localhost'},
-        {host: 'www.google.com', path: '/', port: '80'},
-        protocol
-      );
-
-      expect(res.statusCode).toBe(404);
-    }
-  );
-
   test.each(['http:', 'https:'] as FimiporxyHttpProtocol[])(
     'proxy, %s, fails if host not recognized',
     async protocol => {
@@ -90,83 +61,6 @@ describe('proxy', () => {
       expect(response.status).toBe(404);
     }
   );
-
-  test.skip.each(
-    mixAndMatchObject<TestReverseProxyParams>({
-      method: () => ['GET'],
-      originProtocol: () => ['https:'],
-      proxyProtocol: () => ['https:'],
-    })
-  )('connect, %j', async params => {
-    const {proxyProtocol, method, originProtocol} = params;
-    const originPort = faker.internet.port();
-    const config = await generateTestFimiproxyConfig({
-      exposeHttpProxy: proxyProtocol === 'http:',
-      exposeHttpsProxy: proxyProtocol === 'https:',
-      routes: [
-        {
-          originPort,
-          originProtocol,
-          incomingHostAndPort: `localhost:${originPort}`,
-          originHost: 'localhost',
-        },
-      ],
-    });
-    await startFimiproxyUsingConfig(config, false);
-
-    const reqPath = '/';
-    const reqHeaders: OutgoingHttpHeaders = {host: `localhost:${originPort}`};
-    const reqBody = method === 'GET' ? undefined : '';
-
-    const resStatusCode = 200;
-    const resHeaders = {'x-tag-text': "i'm not a tea pot"};
-    const resBody = 'okay';
-
-    expressArtifacts = await createExpressHttpServer({
-      protocol: originProtocol,
-      httpPort: originPort,
-      httpsPort: originPort,
-    });
-    const {app} = expressArtifacts;
-    const reqHandler = (req: Request, res: Response) => {
-      expect(req.headers).toMatchObject(reqHeaders);
-      res
-        .status(resStatusCode)
-        .header(resHeaders)
-        .send(req.body || resBody);
-    };
-
-    app.get('/', reqHandler);
-    app.post('/', reqHandler);
-
-    const proxyPort =
-      proxyProtocol === 'http:'
-        ? config.httpPort
-        : proxyProtocol === 'https:'
-        ? config.httpsPort
-        : undefined;
-    assert(proxyPort);
-
-    const {socket} = await startHttpConnectCall(
-      /** proxy opts */ {port: proxyPort, host: 'localhost'},
-      /** origin opts */ {host: 'localhost', path: '/', port: originPort},
-      proxyProtocol
-    );
-
-    await writeHttpMessageToSocket(
-      socket,
-      method,
-      reqPath,
-      reqHeaders as Record<string, string>,
-      reqBody
-    );
-    const {headers, signature, body} = await parseHttpMessageFromSocket(socket);
-
-    assert(signature?.type === 'res');
-    expect(signature.statusCode).toBe(resStatusCode.toString());
-    expect(body).toBe(resBody);
-    expect(headers).toMatchObject(resHeaders);
-  });
 
   test.each(
     mixAndMatchObject<TestReverseProxyParams>({

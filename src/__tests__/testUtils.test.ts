@@ -1,3 +1,4 @@
+import {describe, expect, test} from 'vitest';
 import {incrementMixAndMatchIterator, mixAndMatchObject} from './testUtils';
 
 describe('mixAndMatchObject', () => {
@@ -45,8 +46,6 @@ describe('mixAndMatchObject', () => {
       num: () => [0, 1],
       str: () => ['zero', 'one'],
     });
-
-    console.dir(result);
 
     expect(result).toEqual([
       {num: 0, str: 'zero'},

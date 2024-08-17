@@ -14,10 +14,11 @@ import {
   createServer as createHttpsServer,
   request as httpsRequest,
 } from 'node:https';
-import {connect} from 'node:net';
-import {Duplex} from 'node:stream';
 import {URL} from 'node:url';
 import {format} from 'node:util';
+import {BadRequestError} from './error/BadRequestError.js';
+import {getDestination} from './proxy/getDestination.js';
+import {wrapHandleProxyError} from './proxy/wrapHandleProxyError.js';
 import {
   FimiproxyRoutingMap,
   FimiproxyRuntimeArtifacts,
@@ -27,16 +28,11 @@ import {
 let artifacts: FimiproxyRuntimeArtifacts = {};
 let routes: FimiproxyRoutingMap = {};
 
-function getDestination(req: IncomingMessage) {
-  const host = (req.headers.host || '').toLowerCase();
-  return routes[host];
-}
-
 function proxyIncomingRequest(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage> & {req: IncomingMessage}
 ) {
-  const destination = getDestination(req);
+  const destination = getDestination(req, routes);
   req.on('error', error => {
     const fAddr = format(req.socket.address());
     console.log(`error with req from ${fAddr}`);
@@ -65,8 +61,19 @@ function proxyIncomingRequest(
   }
 
   const reqHeaders = req.headers;
-  const incomingUrl = new URL(req.url || '', `http://${reqHeaders.host}`);
-  const {pathname, search, hash} = incomingUrl;
+  const incomingURLStr = req.url || '';
+  const incomingURLHost = `http://${reqHeaders.host}`;
+  const incomingURL = URL.canParse(incomingURLStr, incomingURLHost)
+    ? new URL(incomingURLStr, incomingURLHost)
+    : undefined;
+  assert(
+    incomingURL,
+    new BadRequestError({
+      assertionMessage: `invalid url "${incomingURLStr}", host ${incomingURLHost}`,
+    })
+  );
+
+  const {pathname, search, hash} = incomingURL;
   const options: RequestOptions = {
     port: destination.originPort,
     host: destination.originHost,
@@ -103,62 +110,10 @@ function proxyIncomingRequest(
   req.on('end', () => oReq.end());
 }
 
-function proxyIncomingConnect(
-  req: IncomingMessage,
-  clientSocket: Duplex,
-  head: Buffer
-) {
-  const destination = getDestination(req);
-  clientSocket.on('error', error => {
-    console.log('proxyIncomingConnect clientSocket error');
-    console.error(error);
-  });
-  req.on('error', error => {
-    console.log('proxyIncomingConnect req error');
-    console.error(error);
-  });
-
-  if (!destination) {
-    clientSocket.write(
-      `HTTP/1.1 404 ${STATUS_CODES[404]}\r\n\r\n`,
-      'utf-8',
-      error => {
-        if (error) {
-          console.log('proxyIncomingConnect clientSocket write error');
-          console.error(error);
-        }
-      }
-    );
-    clientSocket.end();
-    return;
-  }
-
-  const serverSocket = connect(
-    destination.originPort,
-    destination.originHost,
-    () => {
-      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      serverSocket.write(head);
-      serverSocket.pipe(clientSocket);
-      clientSocket.pipe(serverSocket);
-    }
-  );
-
-  serverSocket.on('error', error => {
-    console.log('proxyIncomingConnect serverSocket write error');
-    console.error(error);
-  });
-}
-
 async function createHttpProxy() {
   const proxy = createHttpServer();
 
-  proxy.on('request', proxyIncomingRequest);
-
-  // TODO: exclude CONNECT from first release because it's a bit slow, there's
-  // no use case for it, and testing with an HTTPS origin is unfeasible at the
-  // moment
-  // proxy.on('connect', proxyIncomingConnect);
+  proxy.on('request', wrapHandleProxyError(proxyIncomingRequest));
   proxy.on('error', error => {
     console.log('createHttpProxy proxy error');
     console.error(error);
@@ -178,12 +133,7 @@ async function createHttpProxy() {
 async function createHttpsProxy(certificate: string, privateKey: string) {
   const proxy = createHttpsServer({key: privateKey, cert: certificate});
 
-  proxy.on('request', proxyIncomingRequest);
-
-  // TODO: exclude CONNECT from first release because it's a bit slow, there's
-  // no use case for it, and testing with an HTTPS origin is unfeasible at the
-  // moment
-  // proxy.on('connect', proxyIncomingConnect);
+  proxy.on('request', wrapHandleProxyError(proxyIncomingRequest));
   proxy.on('error', error => {
     console.log('createHttpsProxy error');
     console.error(error);

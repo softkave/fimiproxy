@@ -34,7 +34,7 @@
     "!build/src/**/__tests__/**/*"
   ],
   "scripts": {
-    "test": "cross-env NODE_TLS_REJECT_UNAUTHORIZED='0' jest --config=jest.config.ts --detectOpenHandles",
+    "test": "cross-env NODE_TLS_REJECT_UNAUTHORIZED='0' vitest --config ./vitest.config.ts",
     "lint": "gts lint",
     "clean": "gts clean",
     "compile": "tsc",
@@ -48,16 +48,14 @@
   "devDependencies": {
     "@faker-js/faker": "^8.4.1",
     "@types/express": "^4.17.21",
-    "@types/jest": "^28.1.6",
     "@types/node": "20.8.2",
     "@types/node-forge": "^1.3.11",
     "cross-env": "^7.0.3",
     "express": "^4.18.3",
     "gts": "^5.2.0",
-    "jest": "^28.1.3",
     "node-fetch": "^3.3.2",
     "node-forge": "^1.3.1",
-    "ts-jest": "^28.0.7",
-    "typescript": "~5.2.0"
+    "typescript": "~5.2.0",
+    "vitest": "^2.0.5"
   }
 }
