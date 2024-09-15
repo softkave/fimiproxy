@@ -2,8 +2,11 @@
 
 ## Now
 
+- correlated log by req + res, keep socket and start buffer on start request for correlation
+
 ## Later
 
+- address TODOs
 - no downtime config changes
 - use multiple threads
 - benchmarks

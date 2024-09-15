@@ -33,16 +33,22 @@ function proxyIncomingRequest(
   res: ServerResponse<IncomingMessage> & {req: IncomingMessage}
 ) {
   const destination = getDestination(req, routes);
+
   req.on('error', error => {
     const fAddr = format(req.socket.address());
     console.log(`error with req from ${fAddr}`);
     console.error(error);
-    res.writeHead(500, STATUS_CODES[500], {}).end();
+
+    if (res.writable) {
+      res.writeHead(500, STATUS_CODES[500], {}).end();
+    }
   });
+
   res.on('error', error => {
     const fAddr = format(req.socket.address());
     console.log(`error with res to ${fAddr}`);
     console.error(error);
+    // TODO: if there's an error who ends res?
   });
 
   const host = (req.headers.host || '').toLowerCase();
@@ -55,8 +61,11 @@ function proxyIncomingRequest(
   );
 
   if (!destination) {
-    res.writeHead(404, {'Content-Type': 'text/plain'});
-    res.end(STATUS_CODES[404]);
+    if (res.writable) {
+      res.writeHead(404, {'Content-Type': 'text/plain'});
+      res.end(STATUS_CODES[404]);
+    }
+
     return;
   }
 
@@ -86,8 +95,15 @@ function proxyIncomingRequest(
   const requestFn =
     destination.originProtocol === 'http:' ? httpRequest : httpsRequest;
   const oReq = requestFn(options, oRes => {
-    res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
-    oRes.on('data', chunk => res.write(chunk));
+    if (res.writable) {
+      res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
+    }
+
+    oRes.on('data', chunk => {
+      if (res.writable) {
+        res.write(chunk);
+      }
+    });
     oRes.on('end', () => res.end());
     oRes.on('error', error => {
       const fAddr = format(oRes.socket?.address());
@@ -103,11 +119,19 @@ function proxyIncomingRequest(
     const fDestination = format(destination);
     console.log(`error with req to origin ${fAddr} | ${fDestination}`);
     console.error(error);
-    res.writeHead(500, STATUS_CODES[500], {}).end();
+
+    if (res.writable) {
+      res.writeHead(500, STATUS_CODES[500], {}).end();
+    }
   });
 
-  req.on('data', chunk => oReq.write(chunk));
+  req.on('data', chunk => {
+    if (oReq.writable) {
+      oReq.write(chunk);
+    }
+  });
   req.on('end', () => oReq.end());
+  // TODO: what happens with oReq on req.on("error")
 }
 
 async function createHttpProxy() {
