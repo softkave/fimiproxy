@@ -1,9 +1,13 @@
 import type {Server} from 'http';
 
-export interface FimiproxyRouteItem {
+export interface FimiproxyRouteItemOrigin {
   originHost: string;
   originPort: number;
   originProtocol: 'http:' | 'https:';
+}
+
+export interface FimiproxyRouteItem {
+  origin: FimiproxyRouteItemOrigin[];
   incomingHostAndPort: string;
 }
 

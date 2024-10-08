@@ -31,10 +31,10 @@ describe('proxyErrorHandling', () => {
       exposeHttpsProxy: proxyProtocol === 'https:',
       routes: [
         {
-          originPort,
-          originProtocol: 'http:',
           incomingHostAndPort: `localhost:${originPort}`,
-          originHost: 'localhost',
+          origin: [
+            {originPort, originProtocol: 'http:', originHost: 'localhost'},
+          ],
         },
       ],
     });

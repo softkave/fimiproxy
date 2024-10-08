@@ -76,10 +76,8 @@ describe('proxy', () => {
       exposeHttpsProxy: proxyProtocol === 'https:',
       routes: [
         {
-          originPort,
-          originProtocol,
           incomingHostAndPort: `localhost:${originPort}`,
-          originHost: 'localhost',
+          origin: [{originPort, originProtocol, originHost: 'localhost'}],
         },
       ],
     });

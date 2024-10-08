@@ -27,12 +27,35 @@ import {
 
 let artifacts: FimiproxyRuntimeArtifacts = {};
 let routes: FimiproxyRoutingMap = {};
+const roundRobin: Record</** incomingHostAndPort */ string, number> = {};
+
+function getRoundRobinOrigin(
+  req: IncomingMessage,
+  routes: FimiproxyRoutingMap
+) {
+  const destination = getDestination(req, routes);
+  if (!destination) {
+    return undefined;
+  }
+
+  const origins = destination.origin;
+  const originCount = origins.length;
+  if (originCount === 0) {
+    return undefined;
+  }
+
+  const incomingHostAndPort = destination.incomingHostAndPort;
+  const index = roundRobin[incomingHostAndPort] || 0;
+  const origin = origins[index];
+  roundRobin[incomingHostAndPort] = (index + 1) % originCount;
+  return {origin, destination};
+}
 
 function proxyIncomingRequest(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage> & {req: IncomingMessage}
 ) {
-  const destination = getDestination(req, routes);
+  const destination = getRoundRobinOrigin(req, routes);
 
   req.on('error', error => {
     const fAddr = format(req.socket.address());
@@ -54,8 +77,8 @@ function proxyIncomingRequest(
   const host = (req.headers.host || '').toLowerCase();
   console.log(
     `${host} routed to ${
-      destination
-        ? `${destination.originProtocol}//${destination.originHost}:${destination.originPort}`
+      destination?.origin
+        ? `${destination.origin.originProtocol}//${destination.origin.originHost}:${destination.origin.originPort}`
         : 'not found'
     }`
   );
@@ -84,16 +107,16 @@ function proxyIncomingRequest(
 
   const {pathname, search, hash} = incomingURL;
   const options: RequestOptions = {
-    port: destination.originPort,
-    host: destination.originHost,
-    protocol: destination.originProtocol,
+    port: destination.origin.originPort,
+    host: destination.origin.originHost,
+    protocol: destination.origin.originProtocol,
     method: req.method,
     path: pathname + search + hash,
     headers: req.headers,
   };
 
   const requestFn =
-    destination.originProtocol === 'http:' ? httpRequest : httpsRequest;
+    destination.origin.originProtocol === 'http:' ? httpRequest : httpsRequest;
   const oReq = requestFn(options, oRes => {
     if (res.writable) {
       res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
@@ -267,9 +290,13 @@ function prepareRoutesFromConfig(config: FimiproxyRuntimeConfig) {
   assert(config.routes, 'routes not configured');
   routes = config.routes.reduce((acc, route) => {
     const incomingHostAndPort = route.incomingHostAndPort.toLowerCase();
-    const originTxt = `${route.originProtocol}//${route.originHost}:${route.originPort}`;
     acc[incomingHostAndPort] = route;
-    console.log(`route: ${incomingHostAndPort} > ${originTxt}`);
+
+    route.origin.forEach(origin => {
+      const originTxt = `${origin.originProtocol}//${origin.originHost}:${origin.originPort}`;
+      console.log(`route: ${incomingHostAndPort} > ${originTxt}`);
+    });
+
     return acc;
   }, {} as FimiproxyRoutingMap);
 }
