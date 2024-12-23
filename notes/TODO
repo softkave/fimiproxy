@@ -3,6 +3,8 @@
 ## Now
 
 - correlated log by req + res, keep socket and start buffer on start request for correlation
+- multi-instance
+- runtime config changes
 
 ## Later
 
