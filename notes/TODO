@@ -5,10 +5,11 @@
 - correlated log by req + res, keep socket and start buffer on start request for correlation
 - multi-instance
 - runtime config changes
+- cannot send headers after they are sent bug
 
 ## Later
 
-- address TODOs
+- address TODOs in code
 - no downtime config changes
 - use multiple threads
 - benchmarks
@@ -21,3 +22,4 @@
 - use http-graceful-shutdown for graceful shutdown implementation
 - what to do about CONNECT calls
 - better and encompassing error logging, usage logging, and metrics logging
+- allow loading JS scripts for dynamic routing

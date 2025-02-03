@@ -62,7 +62,7 @@ function proxyIncomingRequest(
     console.log(`error with req from ${fAddr}`);
     console.error(error);
 
-    if (res.writable) {
+    if (!res.headersSent) {
       res.writeHead(500, STATUS_CODES[500], {}).end();
     }
   });
@@ -84,7 +84,7 @@ function proxyIncomingRequest(
   );
 
   if (!destination) {
-    if (res.writable) {
+    if (!res.headersSent) {
       res.writeHead(404, {'Content-Type': 'text/plain'});
       res.end(STATUS_CODES[404]);
     }
@@ -118,7 +118,7 @@ function proxyIncomingRequest(
   const requestFn =
     destination.origin.originProtocol === 'http:' ? httpRequest : httpsRequest;
   const oReq = requestFn(options, oRes => {
-    if (res.writable) {
+    if (!res.headersSent) {
       res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
     }
 
@@ -143,7 +143,7 @@ function proxyIncomingRequest(
     console.log(`error with req to origin ${fAddr} | ${fDestination}`);
     console.error(error);
 
-    if (res.writable) {
+    if (!res.headersSent) {
       res.writeHead(500, STATUS_CODES[500], {}).end();
     }
   });
