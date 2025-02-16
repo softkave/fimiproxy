@@ -1,5 +1,5 @@
 #!/usr/bin/env node
 
-import {startFimiproxyUsingProcessArgs} from './proxy';
+import {startFimiproxyUsingProcessArgs} from './proxy/startFimiproxy.js';
 
-startFimiproxyUsingProcessArgs();
+startFimiproxyUsingProcessArgs().catch(console.error.bind(console));

@@ -1,10 +1,11 @@
-import {IncomingMessage} from 'http';
+import {IncomingMessage} from 'node:http';
 import {FimiproxyRoutingMap} from '../types.js';
 
-export function getDestination(
-  req: IncomingMessage,
-  routes: FimiproxyRoutingMap
-) {
-  const host = (req.headers.host || '').toLowerCase();
+export function getHostFromRequest(req: IncomingMessage) {
+  return req.headers.host || '';
+}
+
+export function getDestination(host: string, routes: FimiproxyRoutingMap) {
+  host = host.toLowerCase();
   return routes[host];
 }

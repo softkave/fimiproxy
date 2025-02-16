@@ -1,9 +1,10 @@
 import type {Server} from 'http';
+import type {WebSocketServer} from 'ws';
 
 export interface FimiproxyRouteItemOrigin {
   originHost: string;
   originPort: number;
-  originProtocol: 'http:' | 'https:';
+  originProtocol: 'http:' | 'https:' | 'ws:' | 'wss:';
 }
 
 export interface FimiproxyRouteItem {
@@ -21,6 +22,8 @@ export type FimiproxyRuntimeConfig = Partial<{
   httpPort: string;
   exposeHttpsProxy: boolean;
   httpsPort: string;
+  exposeWsProxyForHttp: boolean;
+  exposeWsProxyForHttps: boolean;
   httpsPublicKeyFilepath: string;
   httpsPrivateKeyFilepath: string;
   httpsPublicKey: string;
@@ -31,4 +34,6 @@ export type FimiproxyRuntimeConfig = Partial<{
 export interface FimiproxyRuntimeArtifacts {
   httpProxy?: Server;
   httpsProxy?: Server;
+  wsProxyForHttp?: WebSocketServer;
+  wsProxyForHttps?: WebSocketServer;
 }

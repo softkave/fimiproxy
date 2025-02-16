@@ -3,12 +3,13 @@ import assert from 'assert';
 import {OutgoingHttpHeaders} from 'http';
 import fetch, {HeadersInit} from 'node-fetch';
 import {afterEach, describe, expect, test} from 'vitest';
-import {endFimiproxy, startFimiproxyUsingConfig} from '../proxy.js';
+import {endFimiproxy} from '../proxy/endFimiproxy.js';
 import {
   FimiporxyHttpProtocol,
   generateTestFimiproxyConfig,
   mixAndMatchObject,
 } from './testUtils.js';
+import {startFimiproxyUsingConfig} from '../proxy/startFimiproxy.js';
 
 type TestReverseProxyParams = {
   proxyProtocol: FimiporxyHttpProtocol;
@@ -22,7 +23,7 @@ describe('proxyErrorHandling', () => {
   test.each(
     mixAndMatchObject<TestReverseProxyParams>({
       proxyProtocol: () => ['https:', 'http:'],
-    })
+    }),
   )('proxy %j returns 400 if there was a request error', async params => {
     const {proxyProtocol} = params;
     const originPort = faker.internet.port();
@@ -46,13 +47,13 @@ describe('proxyErrorHandling', () => {
       proxyProtocol === 'http:'
         ? config.httpPort
         : proxyProtocol === 'https:'
-        ? config.httpsPort
-        : undefined;
+          ? config.httpsPort
+          : undefined;
     assert(proxyPort);
 
     const response = await fetch(
       `${proxyProtocol}//localhost:${proxyPort}${reqPath}`,
-      {method: 'GET', headers: reqHeaders as HeadersInit}
+      {method: 'GET', headers: reqHeaders as HeadersInit},
     );
 
     expect(response.status).toBe(400);

@@ -2,6 +2,7 @@
   "name": "fimiproxy",
   "version": "1.0.0",
   "description": "Simple HTTP and HTTPS reverse proxy",
+  "type": "module",
   "author": {
     "email": "ywordk@gmail.com",
     "name": "softkave"
@@ -52,10 +53,19 @@
     "@types/node-forge": "^1.3.11",
     "cross-env": "^7.0.3",
     "express": "^4.18.3",
-    "gts": "^5.2.0",
+    "gts": "^6.0.2",
     "node-fetch": "^3.3.2",
     "node-forge": "^1.3.1",
-    "typescript": "~5.2.0",
+    "typescript": "~5.7.3",
     "vitest": "^2.0.5"
+  },
+  "dependencies": {
+    "http-graceful-shutdown": "^3.1.14",
+    "softkave-js-utils": "^0.15.0",
+    "type-fest": "^4.34.1",
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "bufferutil": "^4.0.9"
   }
 }

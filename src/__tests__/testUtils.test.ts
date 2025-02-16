@@ -1,5 +1,5 @@
 import {describe, expect, test} from 'vitest';
-import {incrementMixAndMatchIterator, mixAndMatchObject} from './testUtils';
+import {incrementMixAndMatchIterator, mixAndMatchObject} from './testUtils.js';
 
 describe('mixAndMatchObject', () => {
   test('incrementMixAndMatchIterator', () => {

@@ -6,9 +6,10 @@ import console from 'node:console';
 import http from 'node:http';
 import https from 'node:https';
 import {Socket} from 'node:net';
-import {FimiproxyRuntimeConfig} from '../types';
+import {FimiproxyRuntimeConfig} from '../types.js';
 
 export type FimiporxyHttpProtocol = 'http:' | 'https:';
+export type FimiporxyWsProtocol = 'ws:' | 'wss:';
 
 const kHttpPartSeparator = '\r\n';
 const kHttpHeaderKeyValueSeparator = ':';
@@ -25,7 +26,7 @@ async function createHttpServer(port: string | number, app: express.Express) {
 async function createHttpsServer(
   port: string | number,
   app: express.Express,
-  credentials?: {key: string; cert: string}
+  credentials?: {key: string; cert: string},
 ) {
   if (!credentials) {
     const {publicKey, privateKey} = await generatePublicPrivateKeyPair();
@@ -67,7 +68,7 @@ export async function createExpressHttpServer(props: {
 export async function startHttpConnectCall(
   connectOpts: Required<Pick<http.RequestOptions, 'port' | 'host'>>,
   originOpts: Required<Pick<http.RequestOptions, 'port' | 'host' | 'path'>>,
-  protocol: FimiporxyHttpProtocol
+  protocol: FimiporxyHttpProtocol,
 ) {
   const options: http.RequestOptions = {
     protocol,
@@ -93,7 +94,7 @@ export async function startHttpConnectCall(
         console.error(error);
         reject(error);
       });
-    }
+    },
   );
 }
 
@@ -102,7 +103,7 @@ export async function writeHttpMessageToSocket(
   method: string,
   path: string,
   headers: Record<string, string>,
-  body?: string
+  body?: string,
 ) {
   return new Promise<void>((resolve, reject) => {
     // TODO: when it's TLS/HTTPS origin server, how do we encrypt message?
@@ -168,7 +169,7 @@ export function parseHttpMessage(message: string) {
     // there's a double '\r\n' separator between the last header, and http body,
     // which'll yield an  empty '' when split by '\r\n'
     parts.findIndex(part => part === ''),
-    parts.length
+    parts.length,
   );
   const headerParts = parts.slice(0, headersEndIndex);
   const headers = headerParts.reduce(
@@ -177,7 +178,7 @@ export function parseHttpMessage(message: string) {
       acc[key] = value;
       return acc;
     },
-    {} as Record<string, string>
+    {} as Record<string, string>,
   );
 
   const body = parts.slice(headersEndIndex + 1).join('');
@@ -220,7 +221,7 @@ export async function closeHttpServer(server: http.Server) {
 }
 
 export async function generateTestFimiproxyConfig(
-  seed: Partial<FimiproxyRuntimeConfig> = {}
+  seed: Partial<FimiproxyRuntimeConfig> = {},
 ): Promise<FimiproxyRuntimeConfig> {
   const credentials = seed?.exposeHttpsProxy
     ? await generatePublicPrivateKeyPair()
@@ -325,7 +326,7 @@ type MixAndMatchObjectUsing<T extends object> = {
  */
 export function incrementMixAndMatchIterator(
   iterator: number[],
-  max: number[]
+  max: number[],
 ) {
   for (let i = iterator.length - 1; i >= 0; i--) {
     const v = iterator[i] + 1;
@@ -344,7 +345,7 @@ export function incrementMixAndMatchIterator(
 }
 
 export function mixAndMatchObject<T extends Record<string, unknown>>(
-  seed: MixAndMatchObjectUsing<T>
+  seed: MixAndMatchObjectUsing<T>,
 ) {
   const fields = Object.keys(seed);
   const seedFields = fields.map(field => seed[field as keyof T]());
@@ -363,7 +364,7 @@ export function mixAndMatchObject<T extends Record<string, unknown>>(
         acc[k] = seedFields[i][v];
         return acc;
       },
-      {} as Record<string, unknown>
+      {} as Record<string, unknown>,
     );
     result.push(value as T);
   }

@@ -4,14 +4,15 @@ import {Request, Response} from 'express';
 import {OutgoingHttpHeaders} from 'http';
 import fetch, {HeadersInit} from 'node-fetch';
 import {afterEach, describe, expect, test} from 'vitest';
-import {endFimiproxy, startFimiproxyUsingConfig} from '../proxy';
+import {endFimiproxy} from '../proxy/endFimiproxy.js';
 import {
   FimiporxyHttpProtocol,
   closeHttpServer,
   createExpressHttpServer,
   generateTestFimiproxyConfig,
   mixAndMatchObject,
-} from './testUtils';
+} from './testUtils.js';
+import {startFimiproxyUsingConfig} from '../proxy/startFimiproxy.js';
 
 type TestReverseProxyParams = {
   proxyProtocol: FimiporxyHttpProtocol;
@@ -48,8 +49,8 @@ describe('proxy', () => {
         protocol === 'http:'
           ? config.httpPort
           : protocol === 'https:'
-          ? config.httpsPort
-          : undefined;
+            ? config.httpsPort
+            : undefined;
       assert(port);
 
       const reqHeaders: OutgoingHttpHeaders = {host: 'www.google.com:80'};
@@ -59,7 +60,7 @@ describe('proxy', () => {
       });
 
       expect(response.status).toBe(404);
-    }
+    },
   );
 
   test.each(
@@ -67,7 +68,7 @@ describe('proxy', () => {
       method: () => ['GET', 'POST'],
       originProtocol: () => ['https:', 'http:'],
       proxyProtocol: () => ['https:', 'http:'],
-    })
+    }),
   )('proxy, %j', async params => {
     const {proxyProtocol, method, originProtocol} = params;
     const originPort = faker.internet.port();
@@ -112,8 +113,8 @@ describe('proxy', () => {
       proxyProtocol === 'http:'
         ? config.httpPort
         : proxyProtocol === 'https:'
-        ? config.httpsPort
-        : undefined;
+          ? config.httpsPort
+          : undefined;
     assert(proxyPort);
 
     const response = await fetch(
@@ -122,7 +123,7 @@ describe('proxy', () => {
         method,
         body: reqBody,
         headers: reqHeaders as HeadersInit,
-      }
+      },
     );
     const actualResBody = await response.text();
     const actualResHeaders = response.headers.raw();

@@ -3,12 +3,13 @@ import assert from 'assert';
 import {OutgoingHttpHeaders} from 'http';
 import fetch, {HeadersInit} from 'node-fetch';
 import {afterEach, describe, expect, test, vi} from 'vitest';
-import {endFimiproxy, startFimiproxyUsingConfig} from '../proxy';
+import {endFimiproxy} from '../proxy/endFimiproxy.js';
+import {startFimiproxyUsingConfig} from '../proxy/startFimiproxy.js';
 import {
   FimiporxyHttpProtocol,
   generateTestFimiproxyConfig,
   mixAndMatchObject,
-} from './testUtils';
+} from './testUtils.js';
 
 type TestReverseProxyParams = {
   proxyProtocol: FimiporxyHttpProtocol;
@@ -26,14 +27,14 @@ vi.mock<typeof import('../proxy/getDestination.js')>(
         throw new Error('TestError');
       },
     };
-  }
+  },
 );
 
 describe('unknownErrorHandling', () => {
   test.each(
     mixAndMatchObject<TestReverseProxyParams>({
       proxyProtocol: () => ['https:', 'http:'],
-    })
+    }),
   )('proxy %j returns 500 if there was unknown error', async params => {
     const {proxyProtocol} = params;
     const originPort = faker.internet.port();
@@ -57,13 +58,13 @@ describe('unknownErrorHandling', () => {
       proxyProtocol === 'http:'
         ? config.httpPort
         : proxyProtocol === 'https:'
-        ? config.httpsPort
-        : undefined;
+          ? config.httpsPort
+          : undefined;
     assert(proxyPort);
 
     const response = await fetch(
       `${proxyProtocol}//localhost:${proxyPort}${reqPath}`,
-      {method: 'GET', headers: reqHeaders as HeadersInit}
+      {method: 'GET', headers: reqHeaders as HeadersInit},
     );
 
     expect(response.status).toBe(500);

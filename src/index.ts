@@ -1,2 +1,2 @@
-export * from './proxy';
-export * from './types';
+export * from './proxy/startFimiproxy.js';
+export * from './types.js';

@@ -4,12 +4,12 @@ import {ProxyError} from '../error/ProxyError.js';
 export function wrapHandleProxyError(
   fn: (
     req: IncomingMessage,
-    res: ServerResponse<IncomingMessage> & {req: IncomingMessage}
-  ) => void | Promise<void>
+    res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
+  ) => void | Promise<void>,
 ) {
   return async (
     req: IncomingMessage,
-    res: ServerResponse<IncomingMessage> & {req: IncomingMessage}
+    res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
   ) => {
     try {
       await fn(req, res);
