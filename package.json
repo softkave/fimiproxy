@@ -1,7 +1,7 @@
 {
   "name": "fimiproxy",
-  "version": "1.0.0",
-  "description": "Simple HTTP and HTTPS reverse proxy",
+  "version": "1.1.0",
+  "description": "Simple HTTP | HTTPS | WS | WSS reverse proxy",
   "type": "module",
   "author": {
     "email": "ywordk@gmail.com",
@@ -10,13 +10,15 @@
   "license": "MIT",
   "keywords": [
     "reverse proxy",
-    "http",
-    "https",
-    "host"
+    "http proxy",
+    "https proxy",
+    "ws proxy",
+    "wss proxy",
+    "host header proxy"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/softkave/fimiproxy.git"
+    "url": "git+https://github.com/softkave/fimiproxy.git"
   },
   "bugs": {
     "url": "https://github.com/softkave/fimiproxy/issues"
@@ -27,7 +29,9 @@
   },
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",
-  "bin": "build/src/bin.js",
+  "bin": {
+    "fimiproxy": "build/src/bin.js"
+  },
   "files": [
     "build/src/{*.js,**/*.js}",
     "build/src/{*.js.map,**/*.js.map}",

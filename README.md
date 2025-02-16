@@ -1,9 +1,12 @@
 # fimiproxy
 
-simple HTTP | HTTPS reverse proxy in node.js. currently supports:
+simple HTTP | HTTPS | WS | WSS reverse proxy in node.js. currently supports:
 
 - reverse proxy using incoming request `host` header to pre-configured origin server. see [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host)
 - reverse proxy incoming `http | https` request to origin `http | https` server
+- reverse proxy incoming `ws | wss` request to origin `ws | wss` server
+- supports graceful shutdown
+- supports round-robin origin server selection
 
 ## installation
 
@@ -38,6 +41,8 @@ replace `npm` with `yarn` or any other package manager of choice.
 
 - `exposeHttpProxy` — set to `true` to expose an HTTP server, requires `httpPort` to be set if `true`
 - `exposeHttpsProxy` — set to `true` to expose an HTTPS server, requires `httpsPort`, `httpsPublicKey` OR `httpsPublicKeyFilepath`, `httpsPrivateKey` OR `httpsPrivateKeyFilepath` to be set if `true`
+- `exposeWsProxyForHttp` — set to `true` to expose a WebSocket server for HTTP requests, requires `httpPort` and `exposeHttpProxy` to be set if `true`
+- `exposeWsProxyForHttps` — set to `true` to expose a WebSocket server for HTTPS requests, requires `httpsPort` and `exposeHttpsProxy` to be set if `true`
 - `httpPort` — port HTTP server should listen on, when `exposeHttpProxy` is `true`
 - `httpsPort` — port HTTPS server should listen on, when `exposeHttpsProxy` is `true`
 - `httpsPublicKeyFilepath` — filepath to TLS certificate (public key) used with HTTPS server
@@ -47,7 +52,7 @@ replace `npm` with `yarn` or any other package manager of choice.
 - `routes` — array of incoming host to origin protocol, host, and port
   - `originHost` — origin host or IP
   - `originPort` — origin port
-  - `originProtocol` — origin protocol. one of `http:` or `https:`. don't forget the `:` at the end
+  - `originProtocol` — origin protocol. one of `http:` or `https:` or `ws:` or `wss:`. don't forget the `:` at the end
   - `incomingHostAndPort` — incoming `host:port` to proxy to origin server. picked from HTTP `host` header field
 
 ## How to run
