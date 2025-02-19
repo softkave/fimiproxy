@@ -1,9 +1,9 @@
 export class ProxyError extends Error {
   static isProxyError(error: unknown): error is ProxyError {
-    return !!(error as ProxyError | undefined)?.code;
+    return !!(error as ProxyError | undefined)?.statusCode;
   }
 
-  code = 500;
+  statusCode = 500;
   assertionMessage: string;
 
   constructor(props: {message?: string; assertionMessage: string}) {

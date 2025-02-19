@@ -1,36 +1,45 @@
 import assert from 'node:assert';
-import console from 'node:console';
 import {createServer as createHttpServer} from 'node:http';
 import {WebSocketServer} from 'ws';
 import {FimiproxyRuntimeConfig} from '../types.js';
-import {proxyHttpRequest} from './proxyHttpRequest.js';
-import {proxyWsRequest} from './proxyWsRequest.js';
-import {wrapHandleProxyError} from './wrapHandleProxyError.js';
+import {handleForceUpgradeWs} from './forceUpgrade.js';
+import {proxyHttpRequest, wrapHandleHttpProxy} from './proxyHttpRequest.js';
+import {proxyWsRequest, proxyWsServer} from './proxyWsRequest.js';
 
 async function createHttpProxy(params: {exposeWsProxyForHttp?: boolean}) {
-  const proxy = createHttpServer();
-  let wsProxy: WebSocketServer | undefined;
+  const httpProxy = createHttpServer();
+  let wss: WebSocketServer | undefined;
 
   if (params.exposeWsProxyForHttp) {
-    wsProxy = new WebSocketServer({server: proxy});
-    proxyWsRequest(wsProxy);
+    wss = new WebSocketServer({noServer: true});
+    httpProxy.on('upgrade', (req, socket, head) => {
+      const {end} = handleForceUpgradeWs(req, socket, 'ws:');
+      if (end) {
+        return;
+      }
+
+      wss!.handleUpgrade(req, socket, head, ws => {
+        wss!.emit('connection', ws, req);
+      });
+    });
+    proxyWsServer(wss, 'ws:', proxyWsRequest);
   }
 
-  proxy.on('request', wrapHandleProxyError(proxyHttpRequest));
-  proxy.on('error', error => {
+  httpProxy.on('request', wrapHandleHttpProxy(proxyHttpRequest, 'http:'));
+  httpProxy.on('error', error => {
     console.log('createHttpProxy proxy error');
     console.error(error);
   });
-  proxy.on('tlsClientError', error => {
+  httpProxy.on('tlsClientError', error => {
     console.log('createHttpProxy tlsClientError');
     console.error(error);
   });
-  proxy.on('clientError', error => {
+  httpProxy.on('clientError', error => {
     console.log('createHttpProxy clientError');
     console.error(error);
   });
 
-  return {proxy, wsProxy};
+  return {httpProxy, wsProxy: wss};
 }
 
 export async function createHttpProxyUsingConfig(

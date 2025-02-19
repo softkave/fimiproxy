@@ -1,6 +1,6 @@
 {
   "name": "fimiproxy",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Simple HTTP | HTTPS | WS | WSS reverse proxy",
   "type": "module",
   "author": {
@@ -14,7 +14,8 @@
     "https proxy",
     "ws proxy",
     "wss proxy",
-    "host header proxy"
+    "host header proxy",
+    "x-forwarded-host proxy"
   ],
   "repository": {
     "type": "git",

@@ -1,10 +1,10 @@
 import assert from 'node:assert';
-import console from 'node:console';
 import {promises as fsPromises} from 'node:fs';
 import {Server} from 'node:http';
 import {FimiproxyRuntimeConfig} from '../types.js';
 import {
   clearArtifacts,
+  setConfigArtifact,
   setHttpProxyArtifact,
   setHttpsProxyArtifact,
 } from './artifacts.js';
@@ -28,6 +28,8 @@ export async function startFimiproxyUsingConfig(
   shouldHandleGracefulShutdown = true,
   exitProcessOnShutdown = true,
 ) {
+  clearArtifacts();
+  setConfigArtifact(config);
   prepareRoutesFromConfig(config);
   const [httpProxy, httpsProxy] = await Promise.all([
     createHttpProxyUsingConfig(config),
@@ -35,8 +37,8 @@ export async function startFimiproxyUsingConfig(
   ]);
 
   await Promise.all([
-    httpProxy && exposeServer(httpProxy.proxy, config.httpPort),
-    httpsProxy && exposeServer(httpsProxy.proxy, config.httpsPort),
+    httpProxy && exposeServer(httpProxy.httpProxy, config.httpPort),
+    httpsProxy && exposeServer(httpsProxy.httpsProxy, config.httpsPort),
   ]);
 
   if (httpProxy) {
@@ -49,9 +51,8 @@ export async function startFimiproxyUsingConfig(
 
   console.log(`process pid: ${process.pid}`);
 
-  clearArtifacts();
-  setHttpProxyArtifact(httpProxy?.proxy);
-  setHttpsProxyArtifact(httpsProxy?.proxy);
+  setHttpProxyArtifact(httpProxy?.httpProxy);
+  setHttpsProxyArtifact(httpsProxy?.httpsProxy);
 
   // process.on('uncaughtException', (exp, origin) => {
   //   console.log('uncaughtException');

@@ -19,10 +19,12 @@ afterEach(async () => {
   await endFimiproxy(false);
 });
 
-vi.mock<typeof import('../proxy/getDestination.js')>(
-  import('../proxy/getDestination.js'),
-  () => {
+vi.mock<typeof import('../proxy/routes.js')>(
+  import('../proxy/routes.js'),
+  async () => {
+    const actual = await import('../proxy/routes.js');
     return {
+      ...actual,
       getDestination: () => {
         throw new Error('TestError');
       },

@@ -1,4 +1,3 @@
-import assert from 'assert';
 import {
   request as httpRequest,
   IncomingMessage,
@@ -8,14 +7,26 @@ import {
 } from 'node:http';
 import {request as httpsRequest} from 'node:https';
 import {format} from 'node:util';
-import {BadRequestError} from '../error/BadRequestError.js';
+import {ProxyError} from '../error/ProxyError.js';
+import {handleForceUpgradeHttp} from './forceUpgrade.js';
 import {getRoundRobinOrigin} from './routes.js';
+import {getNewForwardedHost} from './utils.js';
+import {respondNotFoundHttp} from './notFound.js';
 
 export function proxyHttpRequest(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
+  protocol: 'http:' | 'https:',
 ) {
-  const destination = getRoundRobinOrigin(req, 'http:');
+  const {destination, incomingURL, host, end} = handleForceUpgradeHttp(
+    req,
+    res,
+    protocol,
+  );
+
+  if (end || !destination) {
+    return;
+  }
 
   req.on('error', error => {
     const fAddr = format(req.socket.address());
@@ -34,49 +45,32 @@ export function proxyHttpRequest(
     // TODO: if there's an error who ends res?
   });
 
-  const host = (req.headers.host || '').toLowerCase();
+  const origin = getRoundRobinOrigin(destination, 'http:');
   console.log(
     `${host} routed to ${
-      destination?.origin
-        ? `${destination.origin.originProtocol}//${destination.origin.originHost}:${destination.origin.originPort}`
+      origin
+        ? `${origin.originProtocol}//${origin.originHost}:${origin.originPort}`
         : 'not found'
     }`,
   );
 
-  if (!destination) {
-    if (!res.headersSent) {
-      res.writeHead(404, {'Content-Type': 'text/plain'});
-      res.end(STATUS_CODES[404]);
-    }
-
+  if (!origin) {
+    respondNotFoundHttp(res);
     return;
   }
 
-  const reqHeaders = req.headers;
-  const incomingURLStr = req.url || '';
-  const incomingURLHost = `http://${reqHeaders.host}`;
-  const incomingURL = URL.canParse(incomingURLStr, incomingURLHost)
-    ? new URL(incomingURLStr, incomingURLHost)
-    : undefined;
-  assert(
-    incomingURL,
-    new BadRequestError({
-      assertionMessage: `invalid url "${incomingURLStr}", host ${incomingURLHost}`,
-    }),
-  );
-
   const {pathname, search, hash} = incomingURL;
   const options: RequestOptions = {
-    port: destination.origin.originPort,
-    host: destination.origin.originHost,
-    protocol: destination.origin.originProtocol,
+    port: origin.originPort,
+    host: origin.originHost,
+    protocol: origin.originProtocol,
     method: req.method,
     path: pathname + search + hash,
-    headers: req.headers,
+    headers: {...req.headers, 'x-forwarded-host': getNewForwardedHost(req)},
   };
 
   const requestFn =
-    destination.origin.originProtocol === 'http:' ? httpRequest : httpsRequest;
+    origin.originProtocol === 'http:' ? httpRequest : httpsRequest;
   const oReq = requestFn(options, oRes => {
     if (!res.headersSent) {
       res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
@@ -115,4 +109,40 @@ export function proxyHttpRequest(
   });
   req.on('end', () => oReq.end());
   // TODO: what happens with oReq on req.on("error")
+}
+
+export function wrapHandleHttpProxy(
+  fn: (
+    req: IncomingMessage,
+    res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
+    protocol: 'http:' | 'https:',
+  ) => void | Promise<void>,
+  protocol: 'http:' | 'https:',
+) {
+  return async (
+    req: IncomingMessage,
+    res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
+  ) => {
+    try {
+      await fn(req, res, protocol);
+    } catch (error: unknown) {
+      let code = 500;
+      let proxyError: ProxyError | undefined;
+
+      if (ProxyError.isProxyError(error)) {
+        code = error.statusCode;
+        proxyError = error;
+      }
+
+      res.writeHead(code, {'Content-Type': 'text/plain'});
+      res.end(STATUS_CODES[code]);
+
+      console.log(`error proxying req for ${protocol}`);
+      if (proxyError?.assertionMessage) {
+        console.log(proxyError?.assertionMessage);
+      }
+
+      console.error(error);
+    }
+  };
 }

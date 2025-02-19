@@ -2,7 +2,6 @@ import {faker} from '@faker-js/faker';
 import express from 'express';
 import forge from 'node-forge';
 import assert from 'node:assert';
-import console from 'node:console';
 import http from 'node:http';
 import https from 'node:https';
 import {Socket} from 'node:net';

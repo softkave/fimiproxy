@@ -1,7 +1,9 @@
 import assert from 'node:assert';
-import {IncomingMessage} from 'node:http';
-import {FimiproxyRoutingMap, FimiproxyRuntimeConfig} from '../types.js';
-import {getDestination, getHostFromRequest} from './getDestination.js';
+import {
+  FimiproxyRouteItem,
+  FimiproxyRoutingMap,
+  FimiproxyRuntimeConfig,
+} from '../types.js';
 
 let routes: FimiproxyRoutingMap = {};
 const roundRobin: Record</** incomingHostAndPort */ string, number> = {};
@@ -10,11 +12,15 @@ export function clearRoutes() {
   routes = {};
 }
 
+export function getDestination(host: string) {
+  host = host.toLowerCase();
+  return routes[host];
+}
+
 export function getRoundRobinOrigin(
-  req: IncomingMessage,
+  destination: FimiproxyRouteItem | undefined,
   protocol: 'http:' | 'ws:',
 ) {
-  const destination = getDestination(getHostFromRequest(req), routes);
   if (!destination) {
     return undefined;
   }
@@ -41,7 +47,7 @@ export function getRoundRobinOrigin(
   const index = roundRobin[incomingHostAndPort] || 0;
   const origin = origins[index];
   roundRobin[incomingHostAndPort] = (index + 1) % originCount;
-  return {origin, destination};
+  return origin;
 }
 
 export function prepareRoutesFromConfig(config: FimiproxyRuntimeConfig) {

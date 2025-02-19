@@ -34,9 +34,9 @@ afterEach(async () => {
   }
 });
 
-describe('websocket proxy', () => {
+describe('proxyWs', () => {
   test.each(['ws:', 'wss:'] as FimiporxyWsProtocol[])(
-    'websocket proxy, %s, fails if host not recognized',
+    'proxy, %s, fails if host not recognized',
     async protocol => {
       const config = await generateTestFimiproxyConfig({
         exposeHttpProxy: protocol === 'ws:',
@@ -64,7 +64,9 @@ describe('websocket proxy', () => {
       });
 
       const closePromise = getDeferredPromise();
-      ws.on('close', () => closePromise.resolve());
+      ws.on('error', error => {
+        closePromise.resolve();
+      });
 
       await closePromise.promise;
       expect(ws.readyState).toBe(WebSocket.CLOSED);
@@ -130,7 +132,7 @@ describe('websocket proxy', () => {
     assert(proxyPort);
 
     const ws = new WebSocket(`${proxyProtocol}//localhost:${proxyPort}`, {
-      headers: {host: `localhost:${originPort}`},
+      headers: {'x-forwarded-host': `localhost:${originPort}`},
     });
 
     ws.on('open', () => {
@@ -147,4 +149,258 @@ describe('websocket proxy', () => {
     ws.close();
     wss.close();
   });
+
+  test('websocket requests are proxied to websocket server not http server', async () => {
+    const originPort = faker.internet.port();
+    const config = await generateTestFimiproxyConfig({
+      exposeHttpProxy: true,
+      exposeWsProxyForHttp: true,
+      routes: [
+        {
+          incomingHostAndPort: `localhost:${originPort}`,
+          origin: [
+            {
+              originPort,
+              originProtocol: 'ws:',
+              originHost: 'localhost',
+            },
+            {
+              originPort,
+              originProtocol: 'http:',
+              originHost: 'localhost',
+            },
+          ],
+        },
+      ],
+    });
+    await startFimiproxyUsingConfig(config, false);
+
+    // Setup origin express server with both HTTP and WebSocket servers
+    expressArtifacts = await createExpressHttpServer({
+      protocol: 'http:',
+      httpPort: originPort,
+    });
+    const {httpServer} = expressArtifacts;
+    assert(httpServer);
+
+    // Track HTTP requests
+    let httpRequestReceived = false;
+    expressArtifacts.app.use((req, res) => {
+      httpRequestReceived = true;
+      res.status(200).send('HTTP Response');
+    });
+
+    // Setup WebSocket server
+    const wss = new WebSocketServer({server: httpServer});
+    const testMessage = faker.lorem.sentence();
+    const messageReceived = getDeferredPromise<string>();
+
+    wss.on('connection', ws => {
+      ws.on('message', message => {
+        const messageStr = message.toString();
+        ws.send(messageStr); // Echo back the message
+      });
+    });
+
+    // Connect to proxy
+    const ws = new WebSocket(`ws://localhost:${config.httpPort}`, {
+      headers: {'x-forwarded-host': `localhost:${originPort}`},
+    });
+
+    ws.on('open', () => {
+      ws.send(testMessage);
+    });
+
+    ws.on('message', message => {
+      messageReceived.resolve(message.toString());
+    });
+
+    const receivedMessage = await messageReceived.promise;
+    expect(receivedMessage).toBe(testMessage);
+    expect(httpRequestReceived).toBe(false); // Verify no HTTP request was made
+
+    ws.close();
+    wss.close();
+  });
+
+  test.each([
+    {
+      config: {
+        forceUpgradeHttpToHttps: true,
+        usePermanentRedirect: true,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return `localhost:${httpsPort}`;
+        },
+      },
+      destination: {
+        forceUpgradeHttpToHttps: false,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return undefined;
+        },
+      },
+      expectedForceUpgradeHttpToHttps: true,
+      name: 'forced upgrade from config with permanent redirect',
+    },
+    {
+      config: {
+        forceUpgradeHttpToHttps: true,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return `localhost:${httpsPort}`;
+        },
+      },
+      destination: {
+        forceUpgradeHttpToHttps: false,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return undefined;
+        },
+      },
+      expectedForceUpgradeHttpToHttps: true,
+      name: 'forced upgrade from config with temporary redirect',
+    },
+    {
+      config: {
+        forceUpgradeHttpToHttps: false,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return `localhost:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceUpgradeHttpToHttps: true,
+        usePermanentRedirect: true,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return `localhost:${httpsPort}`;
+        },
+      },
+      expectedForceUpgradeHttpToHttps: true,
+      name: 'forced upgrade from destination with permanent redirect',
+    },
+    {
+      config: {
+        forceUpgradeHttpToHttps: false,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return `localhost:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceUpgradeHttpToHttps: true,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return `localhost:${httpsPort}`;
+        },
+      },
+      expectedForceUpgradeHttpToHttps: true,
+      name: 'forced upgrade from destination with temporary redirect',
+    },
+    {
+      config: {
+        forceUpgradeHttpToHttps: false,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return undefined;
+        },
+      },
+      destination: {
+        forceUpgradeHttpToHttps: false,
+        usePermanentRedirect: false,
+        getHost(httpPort: number, httpsPort: number): string | undefined {
+          return undefined;
+        },
+      },
+      expectedForceUpgradeHttpToHttps: false,
+      name: 'not forced upgrade',
+    },
+  ])(
+    'upgrades http to https, $name',
+    async ({
+      config: configParams,
+      destination,
+      expectedForceUpgradeHttpToHttps,
+    }) => {
+      const originPort = faker.internet.port();
+      const httpPort = faker.internet.port();
+      const httpsPort = faker.internet.port();
+      const configHost = configParams.getHost(httpPort, httpsPort);
+      const destinationHost = destination.getHost(httpPort, httpsPort);
+      const config = await generateTestFimiproxyConfig({
+        exposeHttpProxy: true,
+        exposeHttpsProxy: true,
+        exposeWsProxyForHttp: true,
+        exposeWsProxyForHttps: true,
+        forceUpgradeHttpToHttps: configParams.forceUpgradeHttpToHttps,
+        usePermanentRedirect: configParams.usePermanentRedirect,
+        redirectHost: configHost,
+        httpPort: `${httpPort}`,
+        httpsPort: `${httpsPort}`,
+        routes: [
+          {
+            incomingHostAndPort: `localhost:${originPort}`,
+            origin: [
+              {
+                originPort,
+                originProtocol: 'ws:',
+                originHost: 'localhost',
+              },
+            ],
+            forceUpgradeHttpToHttps: destination.forceUpgradeHttpToHttps,
+            usePermanentRedirect: destination.usePermanentRedirect,
+            redirectHost: destinationHost,
+          },
+        ],
+      });
+      await startFimiproxyUsingConfig(config, false);
+
+      // Setup origin WebSocket server
+      expressArtifacts = await createExpressHttpServer({
+        protocol: 'http:',
+        httpPort: originPort,
+      });
+      const {httpServer} = expressArtifacts;
+      assert(httpServer);
+
+      const wss = new WebSocketServer({server: httpServer});
+      const testMessage = faker.lorem.sentence();
+      const messageReceived = getDeferredPromise<string>();
+
+      wss.on('connection', ws => {
+        ws.on('message', message => {
+          const messageStr = message.toString();
+          ws.send(messageStr); // Echo back the message
+        });
+      });
+
+      // Connect to proxy using HTTP protocol - should be upgraded if configured
+      const initialWsUrl = `ws://localhost:${config.httpPort}/`;
+      const ws = new WebSocket(initialWsUrl, {
+        headers: {
+          'x-forwarded-host': `localhost:${originPort}`,
+        },
+        followRedirects: true,
+      });
+
+      ws.on('open', () => {
+        ws.send(testMessage);
+      });
+
+      ws.on('message', message => {
+        messageReceived.resolve(message.toString());
+      });
+
+      const receivedMessage = await messageReceived.promise;
+      expect(receivedMessage).toBe(testMessage);
+
+      if (expectedForceUpgradeHttpToHttps) {
+        expect(ws.url).toBe(`wss://${destinationHost || configHost}/`);
+      } else {
+        expect(ws.url).toBe(initialWsUrl);
+      }
+
+      ws.close();
+      wss.close();
+    },
+  );
 });

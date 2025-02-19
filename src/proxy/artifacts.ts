@@ -1,7 +1,10 @@
 import {Server} from 'http';
 import {ReadonlyDeep} from 'type-fest';
 import {WebSocketServer} from 'ws';
-import type {FimiproxyRuntimeArtifacts} from '../types.js';
+import type {
+  FimiproxyRuntimeArtifacts,
+  FimiproxyRuntimeConfig,
+} from '../types.js';
 
 let artifacts: FimiproxyRuntimeArtifacts = {};
 
@@ -31,4 +34,8 @@ export function setWsProxyForHttpsArtifact(
   newWsProxyForHttps: WebSocketServer | undefined,
 ) {
   artifacts.wsProxyForHttps = newWsProxyForHttps;
+}
+
+export function setConfigArtifact(newConfig: FimiproxyRuntimeConfig) {
+  artifacts.config = newConfig;
 }

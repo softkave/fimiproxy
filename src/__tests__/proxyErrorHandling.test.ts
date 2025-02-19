@@ -4,12 +4,12 @@ import {OutgoingHttpHeaders} from 'http';
 import fetch, {HeadersInit} from 'node-fetch';
 import {afterEach, describe, expect, test} from 'vitest';
 import {endFimiproxy} from '../proxy/endFimiproxy.js';
+import {startFimiproxyUsingConfig} from '../proxy/startFimiproxy.js';
 import {
   FimiporxyHttpProtocol,
   generateTestFimiproxyConfig,
   mixAndMatchObject,
 } from './testUtils.js';
-import {startFimiproxyUsingConfig} from '../proxy/startFimiproxy.js';
 
 type TestReverseProxyParams = {
   proxyProtocol: FimiporxyHttpProtocol;

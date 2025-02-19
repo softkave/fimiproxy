@@ -1,5 +1,4 @@
 import gracefulShutdown from 'http-graceful-shutdown';
-import console from 'node:console';
 import {
   getConjoinedPromise,
   kConjoinedPromiseSettlementType,

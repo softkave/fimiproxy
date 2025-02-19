@@ -2,11 +2,12 @@
 
 simple HTTP | HTTPS | WS | WSS reverse proxy in node.js. currently supports:
 
-- reverse proxy using incoming request `host` header to pre-configured origin server. see [https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host)
-- reverse proxy incoming `http | https` request to origin `http | https` server
-- reverse proxy incoming `ws | wss` request to origin `ws | wss` server
-- supports graceful shutdown
+- reverse proxy using incoming request's `x-forwarded-host` or `host` header to pre-configured origin servers. see [Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host) and [X-Forwarded-Host](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-Host)
+- proxy incoming `http:` or `https:` request to origin `http:` or `https:` servers
+- proxy incoming `ws:` or `wss:` request to origin `ws:` or `wss:` servers
+- supports graceful shutdowns
 - supports round-robin origin server selection
+- supports force upgrade `http:` to `https:` and `ws:` to `wss:`
 
 ## installation
 
@@ -21,21 +22,40 @@ replace `npm` with `yarn` or any other package manager of choice.
 ```json
 {
   "exposeHttpProxy": false,
-  "exposeHttpsProxy": false,
   "httpPort": "",
+  "exposeHttpsProxy": false,
   "httpsPort": "",
+  "exposeWsProxyForHttp": false,
+  "exposeWsProxyForHttps": false,
   "httpsPublicKeyFilepath": "",
   "httpsPrivateKeyFilepath": "",
   "httpsPublicKey": "",
   "httpsPrivateKey": "",
   "routes": [
     {
-      "originHost": "",
-      "originPort": "",
-      "originProtocol": "http:",
-      "incomingHostAndPort": ""
+      "origin": [
+        {
+          "originHost": "",
+          "originPort": "",
+          "originProtocol": "http:"
+        },
+        {
+          "originHost": "",
+          "originPort": "",
+          "originProtocol": "ws:"
+        }
+      ],
+      "incomingHostAndPort": "",
+      "forceUpgradeHttpToHttps": false,
+      "forceUpgradeWsToWss": false,
+      "usePermanentRedirect": false,
+      "redirectHost": ""
     }
-  ]
+  ],
+  "forceUpgradeHttpToHttps": false,
+  "forceUpgradeWsToWss": false,
+  "usePermanentRedirect": false,
+  "redirectHost": ""
 }
 ```
 
@@ -50,10 +70,19 @@ replace `npm` with `yarn` or any other package manager of choice.
 - `httpsPublicKey` — TLS certificate (public key) string used with HTTPS server. takes precedence over `httpsPublicKeyFilepath`
 - `httpsPrivateKey` — TLS private key string used with HTTPS server. takes precedence over `httpsPrivateKeyFilepath`
 - `routes` — array of incoming host to origin protocol, host, and port
-  - `originHost` — origin host or IP
-  - `originPort` — origin port
-  - `originProtocol` — origin protocol. one of `http:` or `https:` or `ws:` or `wss:`. don't forget the `:` at the end
+  - `origin` — array of origin server host, port, and protocol
+    - `originHost` — origin host or IP
+    - `originPort` — origin port
+    - `originProtocol` — origin protocol. one of `http:` or `https:` or `ws:` or `wss:`. don't forget the `:` at the end
   - `incomingHostAndPort` — incoming `host:port` to proxy to origin server. picked from HTTP `host` header field
+  - `forceUpgradeHttpToHttps` — set to `true` to force upgrade `http:` request to `https:` request
+  - `forceUpgradeWsToWss` — set to `true` to force upgrade `ws:` request to `wss:` request
+  - `usePermanentRedirect` — set to `true` to use permanent redirect. The proxy server will return a `308` redirect response to the client instead of the default `307` temporary redirect response.
+  - `redirectHost` — host to redirect to. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field.
+- `forceUpgradeHttpToHttps` — set to `true` to force upgrade `http:` request to `https:` request
+- `forceUpgradeWsToWss` — set to `true` to force upgrade `ws:` request to `wss:` request
+- `usePermanentRedirect` — set to `true` to use permanent redirect. The proxy server will return a `308` redirect response to the client instead of the default `307` temporary redirect response.
+- `redirectHost` — host to redirect to. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field.
 
 ## How to run
 
@@ -74,9 +103,11 @@ await fimiproxy.startFimiproxyUsingConfig({
     httpPort: "80",
     httpsPort: "443",
     routes: [{
-      originHost: "localhost",
-      originPort: "6001",
-      originProtocol: "https:",
+      origin: [{
+        originHost: "localhost",
+        originPort: "0000",
+        originProtocol: "https:",
+      }],
       incomingHostAndPort: "www.fimidara.com:80",
     }],
     httpsPublicKey: "",

@@ -11,15 +11,15 @@
 
 - address TODOs in code
 - no downtime config changes
-- use multiple threads
-- benchmarks
+- use multiple threads or processes
+- benchmarks and load tests
 - make into class so we can have multiple fimiproxy instances
 - prefer https over http when there's both origin servers
 - proper error handling
 - return artifacts from start calls so callers can perform explicit graceful shutdowns
 - add validation checks to config file, and config
 - prevent multiple start calls until transition to class-based encapsulation
-- use http-graceful-shutdown for graceful shutdown implementation
 - what to do about CONNECT calls
 - better and encompassing error logging, usage logging, and metrics logging
 - allow loading JS scripts for dynamic routing
+- better code organization
