@@ -331,15 +331,6 @@ describe('proxyHttp', () => {
       },
       name: 'existing forwarded host but host is set',
     },
-    {
-      getExistingForwardedHost(originPort: number): string | undefined {
-        return `localhost:${originPort},localhost:${faker.internet.port()}`;
-      },
-      getHost(originPort: number): string | undefined {
-        return `localhost:${faker.internet.port()}`;
-      },
-      name: 'multiple existing forwarded hosts and host is set',
-    },
   ])(
     'sets x-forwarded-host header when proxying requests $name',
     async ({getExistingForwardedHost, getHost, name}) => {
@@ -382,9 +373,7 @@ describe('proxyHttp', () => {
 
       assert(receivedHeaders);
       expect(receivedHeaders['x-forwarded-host']).toBe(
-        existingForwardedHost
-          ? `${existingForwardedHost},${originalHost || ''}`
-          : originalHost || '',
+        existingForwardedHost || originalHost,
       );
 
       if (!host) {

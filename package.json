@@ -48,8 +48,8 @@
     "pretest": "npm run compile",
     "posttest": "npm run lint",
     "start": "node build/src/start.js",
-    "publish-to-npm": "npm run compile && npm publish",
-    "show-packlist": "npm run compile && npm pack --dry-run"
+    "publish:npm": "npm run compile && npm publish",
+    "show:packlist": "npm run compile && npm pack --dry-run"
   },
   "devDependencies": {
     "@faker-js/faker": "^8.4.1",

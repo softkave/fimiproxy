@@ -7,12 +7,7 @@ export function getHostFromRequest(req: IncomingMessage) {
   let host: string | undefined;
 
   if (typeof forwardedHost === 'string' && forwardedHost) {
-    const commaIndex = forwardedHost.indexOf(',');
-    if (commaIndex !== -1) {
-      host = forwardedHost.slice(0, commaIndex);
-    } else {
-      host = forwardedHost;
-    }
+    host = forwardedHost;
   } else {
     host = req.headers.host;
   }
@@ -40,9 +35,6 @@ export function getIncomingURL(req: IncomingMessage) {
 export function getNewForwardedHost(req: IncomingMessage) {
   const incomingForwardedHost = req.headers['x-forwarded-host'];
   const incomingHost = req.headers.host;
-  const newForwardedHost = incomingForwardedHost
-    ? `${incomingForwardedHost},${incomingHost}`
-    : incomingHost;
-
+  const newForwardedHost = incomingForwardedHost || incomingHost;
   return newForwardedHost;
 }
