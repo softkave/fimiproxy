@@ -8,16 +8,19 @@ import {
 import {request as httpsRequest} from 'node:https';
 import {format} from 'node:util';
 import {ProxyError} from '../error/ProxyError.js';
+import {getArtifacts} from './artifacts.js';
 import {handleForceUpgradeHttp} from './forceUpgrade.js';
+import {respondNotFoundHttp} from './notFound.js';
 import {getRoundRobinOrigin} from './routes.js';
 import {getNewForwardedHost} from './utils.js';
-import {respondNotFoundHttp} from './notFound.js';
 
 export function proxyHttpRequest(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
   protocol: 'http:' | 'https:',
 ) {
+  const {config} = getArtifacts();
+  const {debug} = config || {};
   const {destination, incomingURL, host, end} = handleForceUpgradeHttp(
     req,
     res,
@@ -30,7 +33,7 @@ export function proxyHttpRequest(
 
   req.on('error', error => {
     const fAddr = format(req.socket.address());
-    console.log(`error with req from ${fAddr}`);
+    console.log(`Error with req from ${fAddr}`);
     console.error(error);
 
     if (!res.headersSent) {
@@ -40,21 +43,24 @@ export function proxyHttpRequest(
 
   res.on('error', error => {
     const fAddr = format(req.socket.address());
-    console.log(`error with res to ${fAddr}`);
+    console.log(`Error with res to ${fAddr}`);
     console.error(error);
     // TODO: if there's an error who ends res?
   });
 
   const origin = getRoundRobinOrigin(destination, 'http:');
-  console.log(
-    `${host} routed to ${
-      origin
-        ? `${origin.originProtocol}//${origin.originHost}:${origin.originPort}`
-        : 'not found'
-    }`,
-  );
+  const originStr = origin
+    ? `${origin.originProtocol}//${origin.originHost}:${origin.originPort}`
+    : 'not found';
+  console.log(`${host} routed to ${originStr}`);
 
   if (!origin) {
+    if (debug) {
+      console.log('Request Host: ', host);
+      console.log('Error: Origin not found');
+      console.dir({headers: req.headers}, {depth: null});
+    }
+
     respondNotFoundHttp(res);
     return;
   }
@@ -69,10 +75,29 @@ export function proxyHttpRequest(
     headers: {...req.headers, 'x-forwarded-host': getNewForwardedHost(req)},
   };
 
+  if (debug) {
+    console.log('Request Host: ', host);
+    console.log('Request Origin: ', originStr);
+    console.dir(options, {depth: null});
+  }
+
   const requestFn =
     origin.originProtocol === 'http:' ? httpRequest : httpsRequest;
   const oReq = requestFn(options, oRes => {
     if (!res.headersSent) {
+      if (debug) {
+        console.log('Response Host: ', host);
+        console.log('Response Origin: ', originStr);
+        console.dir(
+          {
+            statusCode: oRes.statusCode,
+            statusMessage: oRes.statusMessage,
+            headers: oRes.headers,
+          },
+          {depth: null},
+        );
+      }
+
       res.writeHead(oRes.statusCode || 200, oRes.statusMessage, oRes.headers);
     }
 
@@ -81,11 +106,12 @@ export function proxyHttpRequest(
         res.write(chunk);
       }
     });
+
     oRes.on('end', () => res.end());
     oRes.on('error', error => {
       const fAddr = format(oRes.socket?.address());
       const fDestination = format(destination);
-      console.log(`error with res from origin ${fAddr} | ${fDestination}`);
+      console.log(`Error with res from origin ${fAddr} | ${fDestination}`);
       console.error(error);
       res.end();
     });
@@ -94,7 +120,7 @@ export function proxyHttpRequest(
   oReq.on('error', error => {
     const fAddr = format(oReq.socket?.address());
     const fDestination = format(destination);
-    console.log(`error with req to origin ${fAddr} | ${fDestination}`);
+    console.log(`Error with req to origin ${fAddr} | ${fDestination}`);
     console.error(error);
 
     if (!res.headersSent) {
@@ -107,6 +133,7 @@ export function proxyHttpRequest(
       oReq.write(chunk);
     }
   });
+
   req.on('end', () => oReq.end());
   // TODO: what happens with oReq on req.on("error")
 }
@@ -137,7 +164,7 @@ export function wrapHandleHttpProxy(
       res.writeHead(code, {'Content-Type': 'text/plain'});
       res.end(STATUS_CODES[code]);
 
-      console.log(`error proxying req for ${protocol}`);
+      console.log(`Error proxying req for ${protocol}`);
       if (proxyError?.assertionMessage) {
         console.log(proxyError?.assertionMessage);
       }

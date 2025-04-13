@@ -37,6 +37,7 @@ export type FimiproxyRuntimeConfig = Partial<{
   forceUpgradeWsToWss: boolean;
   usePermanentRedirect: boolean;
   redirectHost: string;
+  debug: boolean;
 }>;
 
 export interface FimiproxyRuntimeArtifacts {

@@ -67,7 +67,7 @@
   },
   "dependencies": {
     "http-graceful-shutdown": "^3.1.14",
-    "softkave-js-utils": "^0.15.0",
+    "softkave-js-utils": "^0.16.3",
     "type-fest": "^4.34.1",
     "ws": "^8.18.0"
   },
