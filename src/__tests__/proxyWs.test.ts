@@ -99,6 +99,7 @@ describe('proxyWs', () => {
         },
       ],
     });
+
     await startFimiproxyUsingConfig(config, false);
 
     // Setup origin WebSocket server
@@ -403,4 +404,80 @@ describe('proxyWs', () => {
       wss.close();
     },
   );
+
+  test('websocket proxy override host', async () => {
+    const originPort = faker.internet.port();
+    const overrideHost = `localhost:${faker.internet.port()}`;
+    const config = await generateTestFimiproxyConfig({
+      exposeHttpProxy: true,
+      exposeHttpsProxy: true,
+      exposeWsProxyForHttp: true,
+      exposeWsProxyForHttps: true,
+      routes: [
+        {
+          incomingHostAndPort: `localhost:${originPort}`,
+          origin: [
+            {
+              originPort,
+              originProtocol: 'ws:',
+              originHost: 'localhost',
+            },
+          ],
+          overrideHost,
+        },
+      ],
+    });
+
+    await startFimiproxyUsingConfig(config, false);
+
+    // Setup origin WebSocket server
+    expressArtifacts = await createExpressHttpServer({
+      protocol: 'http:',
+      httpPort: originPort,
+    });
+    const {httpServer} = expressArtifacts;
+    assert(httpServer);
+
+    const wss = new WebSocketServer({server: httpServer});
+    const testMessage = faker.lorem.sentence();
+    const messageReceived = getDeferredPromise<string>();
+
+    wss.on('connection', ws => {
+      ws.on('message', message => {
+        const messageStr = message.toString();
+        ws.send(messageStr); // Echo back the message
+      });
+    });
+
+    wss.on('headers', (headers, request) => {
+      const {rawHeaders} = request;
+      const hostHeaderIndex = rawHeaders.findIndex(
+        header => header.toLowerCase() === 'host',
+      );
+      expect(hostHeaderIndex).toBeGreaterThan(-1);
+      expect(rawHeaders[hostHeaderIndex + 1]).toBe(overrideHost);
+    });
+
+    // Connect to proxy
+    const proxyPort = config.httpPort;
+    assert(proxyPort);
+
+    const ws = new WebSocket(`ws://localhost:${proxyPort}`, {
+      headers: {'x-forwarded-host': `localhost:${originPort}`},
+    });
+
+    ws.on('open', () => {
+      ws.send(testMessage);
+    });
+
+    ws.on('message', message => {
+      messageReceived.resolve(message.toString());
+    });
+
+    const receivedMessage = await messageReceived.promise;
+    expect(receivedMessage).toBe(testMessage);
+
+    ws.close();
+    wss.close();
+  });
 });

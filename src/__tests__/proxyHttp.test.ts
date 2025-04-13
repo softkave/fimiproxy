@@ -320,6 +320,9 @@ describe('proxyHttp', () => {
       getHost(originPort: number): string | undefined {
         return `localhost:${originPort}`;
       },
+      getOverrideHost(originPort: number): string | undefined {
+        return undefined;
+      },
       name: 'no existing forwarded host but host is set',
     },
     {
@@ -329,14 +332,30 @@ describe('proxyHttp', () => {
       getHost(originPort: number): string | undefined {
         return `localhost:${faker.internet.port()}`;
       },
+      getOverrideHost(originPort: number): string | undefined {
+        return undefined;
+      },
       name: 'existing forwarded host but host is set',
+    },
+    {
+      getExistingForwardedHost(originPort: number): string | undefined {
+        return `localhost:${originPort}`;
+      },
+      getHost(originPort: number): string | undefined {
+        return `localhost:${faker.internet.port()}`;
+      },
+      getOverrideHost(originPort: number): string | undefined {
+        return `localhost:${faker.internet.port()}`;
+      },
+      name: 'existing forwarded host and override host is set',
     },
   ])(
     'sets x-forwarded-host header when proxying requests $name',
-    async ({getExistingForwardedHost, getHost, name}) => {
+    async ({getExistingForwardedHost, getHost, getOverrideHost}) => {
       const originPort = faker.internet.port();
       const existingForwardedHost = getExistingForwardedHost(originPort);
       const host = getHost(originPort);
+      const overrideHost = getOverrideHost(originPort);
       const config = await generateTestFimiproxyConfig({
         exposeHttpProxy: true,
         routes: [
@@ -345,9 +364,11 @@ describe('proxyHttp', () => {
             origin: [
               {originPort, originProtocol: 'http:', originHost: 'localhost'},
             ],
+            overrideHost,
           },
         ],
       });
+
       await startFimiproxyUsingConfig(config, false);
 
       const originalHost = host || '';
@@ -373,8 +394,9 @@ describe('proxyHttp', () => {
 
       assert(receivedHeaders);
       expect(receivedHeaders['x-forwarded-host']).toBe(
-        existingForwardedHost || originalHost,
+        overrideHost || existingForwardedHost || originalHost,
       );
+      expect(receivedHeaders.host).toBe(overrideHost || originalHost);
 
       if (!host) {
         expect(fetchResponse.status).toBe(404);

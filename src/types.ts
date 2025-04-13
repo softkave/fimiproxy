@@ -14,6 +14,7 @@ export interface FimiproxyRouteItem {
   forceUpgradeWsToWss?: boolean;
   usePermanentRedirect?: boolean;
   redirectHost?: string;
+  overrideHost?: string;
 }
 
 export type FimiproxyRoutingMap = Record<

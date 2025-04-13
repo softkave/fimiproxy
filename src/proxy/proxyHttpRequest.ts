@@ -48,6 +48,7 @@ export function proxyHttpRequest(
     // TODO: if there's an error who ends res?
   });
 
+  const {overrideHost} = destination;
   const origin = getRoundRobinOrigin(destination, 'http:');
   const originStr = origin
     ? `${origin.originProtocol}//${origin.originHost}:${origin.originPort}`
@@ -72,12 +73,17 @@ export function proxyHttpRequest(
     protocol: origin.originProtocol,
     method: req.method,
     path: pathname + search + hash,
-    headers: {...req.headers, 'x-forwarded-host': getNewForwardedHost(req)},
+    headers: {
+      ...req.headers,
+      host: overrideHost || req.headers.host,
+      'x-forwarded-host': overrideHost || getNewForwardedHost(req),
+    },
   };
 
   if (debug) {
     console.log('Request Host: ', host);
     console.log('Request Origin: ', originStr);
+    console.log('Request Override Host: ', overrideHost);
     console.dir(options, {depth: null});
   }
 
@@ -88,6 +94,7 @@ export function proxyHttpRequest(
       if (debug) {
         console.log('Response Host: ', host);
         console.log('Response Origin: ', originStr);
+        console.log('Response Override Host: ', overrideHost);
         console.dir(
           {
             statusCode: oRes.statusCode,

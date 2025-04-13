@@ -36,5 +36,9 @@ export function getNewForwardedHost(req: IncomingMessage) {
   const incomingForwardedHost = req.headers['x-forwarded-host'];
   const incomingHost = req.headers.host;
   const newForwardedHost = incomingForwardedHost || incomingHost;
+  if (Array.isArray(newForwardedHost)) {
+    return newForwardedHost[0];
+  }
+
   return newForwardedHost;
 }

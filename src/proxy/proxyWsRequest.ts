@@ -21,16 +21,21 @@ export function proxyWsRequest(ws: WebSocket, req: IncomingMessage) {
     }`,
   );
 
-  if (!origin) {
+  if (!origin || !destination) {
     ws.close();
     return;
   }
 
+  const {overrideHost} = destination;
   const {pathname, search, hash} = incomingURL;
   const {originHost, originPort, originProtocol} = origin;
   const url = `${originProtocol}//${originHost}:${originPort}${pathname}${search}${hash}`;
   const targetWs = new WebSocket(url, {
-    headers: {...req.headers, 'x-forwarded-host': getNewForwardedHost(req)},
+    headers: {
+      ...req.headers,
+      host: overrideHost || req.headers.host,
+      'x-forwarded-host': overrideHost || getNewForwardedHost(req),
+    },
   });
 
   ws.pause();

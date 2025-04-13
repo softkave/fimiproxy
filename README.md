@@ -78,11 +78,12 @@ replace `npm` with `yarn` or any other package manager of choice.
   - `forceUpgradeHttpToHttps` — set to `true` to force upgrade `http:` request to `https:` request
   - `forceUpgradeWsToWss` — set to `true` to force upgrade `ws:` request to `wss:` request
   - `usePermanentRedirect` — set to `true` to use permanent redirect. The proxy server will return a `308` redirect response to the client instead of the default `307` temporary redirect response.
-  - `redirectHost` — host to redirect to. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field.
+  - `redirectHost` — host to redirect to, e.g. when upgrading to HTTPS or WSS, or if the incoming host is no longer supported and all requests to it should be redirected somewhere else. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field.
+  - `overrideHost` — host origin request `host` and `x-forwarded-host` header fields are set to.
 - `forceUpgradeHttpToHttps` — set to `true` to force upgrade `http:` request to `https:` request
 - `forceUpgradeWsToWss` — set to `true` to force upgrade `ws:` request to `wss:` request
 - `usePermanentRedirect` — set to `true` to use permanent redirect. The proxy server will return a `308` redirect response to the client instead of the default `307` temporary redirect response.
-- `redirectHost` — host to redirect to. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field.
+- `redirectHost` — host to redirect to, e.g. when upgrading to HTTPS or WSS, or if the incoming host is no longer supported and all requests to it should be redirected somewhere else. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field.
 
 ## How to run
 
