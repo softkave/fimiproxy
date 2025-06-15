@@ -8,26 +8,37 @@ import {
 import {request as httpsRequest} from 'node:https';
 import {format} from 'node:util';
 import {ProxyError} from '../error/ProxyError.js';
+import {FimiproxyProtocol} from '../types.js';
 import {getArtifacts} from './artifacts.js';
-import {handleForceUpgradeHttp} from './forceUpgrade.js';
-import {respondNotFoundHttp} from './notFound.js';
+import {handleForceRedirect} from './forceRedirect.js';
+import {handleForceUpgrade} from './forceUpgrade.js';
+import {makeHttpProxyHelpers} from './httpHelpers.js';
+import {handleDestinationNotFound} from './notFound.js';
 import {getRoundRobinOrigin} from './routes.js';
 import {getNewForwardedHost} from './utils.js';
+import {getWorkingProxy} from './workingProxy.js';
 
 export function proxyHttpRequest(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage> & {req: IncomingMessage},
-  protocol: 'http:' | 'https:',
+  protocol: FimiproxyProtocol,
 ) {
   const {config} = getArtifacts();
   const {debug} = config || {};
-  const {destination, incomingURL, host, end} = handleForceUpgradeHttp(
-    req,
-    res,
-    protocol,
-  );
+  const proxyHelpers = makeHttpProxyHelpers(res);
+  const workingProxy = getWorkingProxy(req, protocol);
+  if (handleForceRedirect(workingProxy, proxyHelpers).end) {
+    return;
+  }
 
-  if (end || !destination) {
+  if (handleDestinationNotFound(workingProxy, proxyHelpers).end) {
+    return;
+  }
+
+  if (
+    handleForceUpgrade(workingProxy, proxyHelpers).end ||
+    !workingProxy.destination
+  ) {
     return;
   }
 
@@ -48,25 +59,25 @@ export function proxyHttpRequest(
     // TODO: if there's an error who ends res?
   });
 
-  const {overrideHost} = destination;
-  const origin = getRoundRobinOrigin(destination, 'http:');
+  const {overrideHost} = workingProxy.destination;
+  const origin = getRoundRobinOrigin(workingProxy.destination, 'http:');
   const originStr = origin
     ? `${origin.originProtocol}//${origin.originHost}:${origin.originPort}`
     : 'not found';
-  console.log(`${host} routed to ${originStr}`);
+  console.log(`${workingProxy.host} routed to ${originStr}`);
 
   if (!origin) {
     if (debug) {
-      console.log('Request Host: ', host);
+      console.log('Request Host: ', workingProxy.host);
       console.log('Error: Origin not found');
       console.dir({headers: req.headers}, {depth: null});
     }
 
-    respondNotFoundHttp(res);
+    proxyHelpers.respondNotFound();
     return;
   }
 
-  const {pathname, search, hash} = incomingURL;
+  const {pathname, search, hash} = workingProxy.incomingURL;
   const options: RequestOptions = {
     port: origin.originPort,
     host: origin.originHost,
@@ -81,7 +92,7 @@ export function proxyHttpRequest(
   };
 
   if (debug) {
-    console.log('Request Host: ', host);
+    console.log('Request Host: ', workingProxy.host);
     console.log('Request Origin: ', originStr);
     console.log('Request Override Host: ', overrideHost);
     console.dir(options, {depth: null});
@@ -92,7 +103,7 @@ export function proxyHttpRequest(
   const oReq = requestFn(options, oRes => {
     if (!res.headersSent) {
       if (debug) {
-        console.log('Response Host: ', host);
+        console.log('Response Host: ', workingProxy.host);
         console.log('Response Origin: ', originStr);
         console.log('Response Override Host: ', overrideHost);
         console.dir(
@@ -117,7 +128,7 @@ export function proxyHttpRequest(
     oRes.on('end', () => res.end());
     oRes.on('error', error => {
       const fAddr = format(oRes.socket?.address());
-      const fDestination = format(destination);
+      const fDestination = format(workingProxy.destination);
       console.log(`Error with res from origin ${fAddr} | ${fDestination}`);
       console.error(error);
       res.end();
@@ -126,7 +137,7 @@ export function proxyHttpRequest(
 
   oReq.on('error', error => {
     const fAddr = format(oReq.socket?.address());
-    const fDestination = format(destination);
+    const fDestination = format(workingProxy.destination);
     console.log(`Error with req to origin ${fAddr} | ${fDestination}`);
     console.error(error);
 
@@ -145,7 +156,7 @@ export function proxyHttpRequest(
   // TODO: what happens with oReq on req.on("error")
 }
 
-export function wrapHandleHttpProxy(
+export function wrapHttpProxyHandler(
   fn: (
     req: IncomingMessage,
     res: ServerResponse<IncomingMessage> & {req: IncomingMessage},

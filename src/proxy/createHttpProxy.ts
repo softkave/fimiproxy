@@ -1,10 +1,14 @@
 import assert from 'node:assert';
 import {createServer as createHttpServer} from 'node:http';
 import {WebSocketServer} from 'ws';
-import {FimiproxyRuntimeConfig} from '../types.js';
-import {handleForceUpgradeWs} from './forceUpgrade.js';
-import {proxyHttpRequest, wrapHandleHttpProxy} from './proxyHttpRequest.js';
+import {FimiproxyRuntimeConfig, kFimiproxyProtocols} from '../types.js';
+import {handleForceRedirect} from './forceRedirect.js';
+import {handleForceUpgrade} from './forceUpgrade.js';
+import {handleDestinationNotFound} from './notFound.js';
+import {proxyHttpRequest, wrapHttpProxyHandler} from './proxyHttpRequest.js';
 import {proxyWsRequest, proxyWsServer} from './proxyWsRequest.js';
+import {getWorkingProxy} from './workingProxy.js';
+import {makeWsProxyHelpers} from './wsHelpers.js';
 
 async function createHttpProxy(params: {exposeWsProxyForHttp?: boolean}) {
   const httpProxy = createHttpServer();
@@ -13,8 +17,17 @@ async function createHttpProxy(params: {exposeWsProxyForHttp?: boolean}) {
   if (params.exposeWsProxyForHttp) {
     wss = new WebSocketServer({noServer: true});
     httpProxy.on('upgrade', (req, socket, head) => {
-      const {end} = handleForceUpgradeWs(req, socket, 'ws:');
-      if (end) {
+      const proxyHelpers = makeWsProxyHelpers(socket);
+      const workingProxy = getWorkingProxy(req, kFimiproxyProtocols.ws);
+      if (handleForceRedirect(workingProxy, proxyHelpers).end) {
+        return;
+      }
+
+      if (handleDestinationNotFound(workingProxy, proxyHelpers).end) {
+        return;
+      }
+
+      if (handleForceUpgrade(workingProxy, proxyHelpers).end) {
         return;
       }
 
@@ -22,10 +35,13 @@ async function createHttpProxy(params: {exposeWsProxyForHttp?: boolean}) {
         wss!.emit('connection', ws, req);
       });
     });
-    proxyWsServer(wss, 'ws:', proxyWsRequest);
+    proxyWsServer(wss, kFimiproxyProtocols.ws, proxyWsRequest);
   }
 
-  httpProxy.on('request', wrapHandleHttpProxy(proxyHttpRequest, 'http:'));
+  httpProxy.on(
+    'request',
+    wrapHttpProxyHandler(proxyHttpRequest, kFimiproxyProtocols.http),
+  );
   httpProxy.on('error', error => {
     console.log('createHttpProxy proxy error');
     console.error(error);

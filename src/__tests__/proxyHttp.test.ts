@@ -277,6 +277,11 @@ describe('proxyHttp', () => {
         res.send(expectedBody);
       });
 
+      // Handle the test path that the proxy request will forward
+      app.get('/test-path', (_req, res) => {
+        res.send(expectedBody);
+      });
+
       // Make HTTP request to proxy - it should be upgraded to HTTPS
       const response = await fetch(`http://localhost:${config.httpPort}`, {
         redirect: 'manual',
@@ -405,4 +410,261 @@ describe('proxyHttp', () => {
       }
     },
   );
+
+  test.each([
+    {
+      config: {
+        usePermanentRedirect: true,
+        getRedirectHost(): string {
+          return `redirect.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      expectedStatusCode: 308,
+      name: 'force redirect with permanent redirect from config',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `redirect.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      expectedStatusCode: 307,
+      name: 'force redirect with temporary redirect from config',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `config.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: true,
+        getRedirectHost(): string {
+          return `dest.example.com:${faker.internet.port()}`;
+        },
+      },
+      expectedStatusCode: 308,
+      name: 'force redirect with permanent redirect from destination',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `config.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `dest.example.com:${faker.internet.port()}`;
+        },
+      },
+      expectedStatusCode: 307,
+      name: 'force redirect with temporary redirect from destination',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      expectedStatusCode: 200,
+      name: 'force redirect disabled when no redirect host configured',
+    },
+  ])(
+    'handles force redirect flow, $name',
+    async ({config: configParams, destination, expectedStatusCode}) => {
+      const originPort = faker.internet.port();
+      const configRedirectHost = configParams.getRedirectHost();
+      const destinationRedirectHost = destination.getRedirectHost();
+      const expectedRedirectHost =
+        destinationRedirectHost || configRedirectHost;
+
+      const config = await generateTestFimiproxyConfig({
+        exposeHttpProxy: true,
+        usePermanentRedirect: configParams.usePermanentRedirect,
+        redirectHost: configRedirectHost,
+        routes: [
+          {
+            incomingHostAndPort: `localhost:${originPort}`,
+            origin: [
+              {originPort, originProtocol: 'http:', originHost: 'localhost'},
+            ],
+            forceRedirect: destination.forceRedirect,
+            usePermanentRedirect: destination.usePermanentRedirect,
+            redirectHost: destinationRedirectHost,
+          },
+        ],
+      });
+
+      await startFimiproxyUsingConfig(config, false);
+
+      // Setup origin server for non-redirect cases
+      const expectedBody = faker.lorem.paragraph();
+      if (expectedStatusCode === 200) {
+        expressArtifacts = await createExpressHttpServer({
+          protocol: 'http:',
+          httpPort: originPort,
+        });
+        const {app} = expressArtifacts;
+
+        app.get('/', (_req, res) => {
+          res.send(expectedBody);
+        });
+
+        // Handle the test path that the proxy request will forward
+        app.get('/test-path', (_req, res) => {
+          res.send(expectedBody);
+        });
+      }
+
+      // Make request to proxy
+      const response = await fetch(
+        `http://localhost:${config.httpPort}/test-path?param=value`,
+        {
+          redirect: 'manual',
+          headers: {
+            host: `localhost:${originPort}`,
+          },
+        },
+      );
+
+      // Verify response
+      expect(response.status).toBe(expectedStatusCode);
+
+      if (expectedStatusCode === 307 || expectedStatusCode === 308) {
+        // Verify redirect
+        const location = response.headers.get('location');
+        expect(location).toBe(
+          `http://${expectedRedirectHost}/test-path?param=value`,
+        );
+      } else if (expectedStatusCode === 200) {
+        // Verify proxy worked normally
+        const body = await response.text();
+        expect(body).toBe(expectedBody);
+      }
+    },
+  );
+
+  test.each([
+    {
+      protocol: 'http:' as FimiporxyHttpProtocol,
+      expectedRedirectProtocol: 'http',
+      name: 'HTTP protocol',
+    },
+    {
+      protocol: 'https:' as FimiporxyHttpProtocol,
+      expectedRedirectProtocol: 'https',
+      name: 'HTTPS protocol',
+    },
+  ])(
+    'preserves protocol in force redirect, $name',
+    async ({protocol, expectedRedirectProtocol}) => {
+      const originPort = faker.internet.port();
+      const redirectHost = `redirect.example.com:${faker.internet.port()}`;
+
+      const config = await generateTestFimiproxyConfig({
+        exposeHttpProxy: protocol === 'http:',
+        exposeHttpsProxy: protocol === 'https:',
+        routes: [
+          {
+            incomingHostAndPort: `localhost:${originPort}`,
+            origin: [
+              {originPort, originProtocol: protocol, originHost: 'localhost'},
+            ],
+            forceRedirect: true,
+            redirectHost,
+          },
+        ],
+      });
+
+      await startFimiproxyUsingConfig(config, false);
+
+      const proxyPort =
+        protocol === 'http:' ? config.httpPort : config.httpsPort;
+      const response = await fetch(
+        `${protocol}//localhost:${proxyPort}/path?query=test#hash`,
+        {
+          redirect: 'manual',
+          headers: {
+            host: `localhost:${originPort}`,
+          },
+        },
+      );
+
+      expect(response.status).toBe(307);
+      const location = response.headers.get('location');
+      expect(location).toBe(
+        `${expectedRedirectProtocol}://${redirectHost}/path?query=test`,
+      );
+    },
+  );
+
+  test('force redirect preserves URL parts based on redirectURLParts configuration', async () => {
+    const originPort = faker.internet.port();
+    const redirectHost = `redirect.example.com:${faker.internet.port()}`;
+
+    const config = await generateTestFimiproxyConfig({
+      exposeHttpProxy: true,
+      routes: [
+        {
+          incomingHostAndPort: `localhost:${originPort}`,
+          origin: [
+            {originPort, originProtocol: 'http:', originHost: 'localhost'},
+          ],
+          forceRedirect: true,
+          redirectHost,
+          redirectURLParts: {
+            pathname: true,
+            search: false,
+            username: false,
+            password: false,
+          },
+        },
+      ],
+    });
+
+    await startFimiproxyUsingConfig(config, false);
+
+    const response = await fetch(
+      `http://localhost:${config.httpPort}/test/path?query=value&other=param`,
+      {
+        redirect: 'manual',
+        headers: {
+          host: `localhost:${originPort}`,
+        },
+      },
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get('location');
+    // Should preserve pathname but not search params (hash fragments are not sent to server)
+    expect(location).toBe(`http://${redirectHost}/test/path`);
+  });
 });

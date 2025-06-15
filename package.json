@@ -42,14 +42,14 @@
   "scripts": {
     "test": "cross-env NODE_TLS_REJECT_UNAUTHORIZED='0' vitest --config ./vitest.config.ts",
     "lint": "gts lint",
-    "clean": "gts clean",
+    "clean": "gts clean && rm -f tsconfig.tsbuildinfo",
     "compile": "npm run clean && tsc",
     "fix": "gts fix",
     "pretest": "npm run compile",
     "posttest": "npm run lint",
     "start": "node build/src/start.js",
-    "publish:npm": "npm run compile && npm publish",
-    "show:packlist": "npm run compile && npm pack --dry-run"
+    "publish:npm": "npm run clean && tsc && npm publish",
+    "show:packlist": "npm run clean && tsc && npm pack --dry-run"
   },
   "devDependencies": {
     "@faker-js/faker": "^8.4.1",

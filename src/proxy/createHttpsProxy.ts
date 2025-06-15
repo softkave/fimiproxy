@@ -1,11 +1,14 @@
 import assert from 'node:assert';
 import {createServer as createHttpsServer} from 'node:https';
 import {WebSocketServer} from 'ws';
-import {FimiproxyRuntimeConfig} from '../types.js';
+import {FimiproxyRuntimeConfig, kFimiproxyProtocols} from '../types.js';
 import {prepareHttpsCredentials} from './config.js';
-import {handleDestinationNotFoundWs} from './notFound.js';
-import {proxyHttpRequest, wrapHandleHttpProxy} from './proxyHttpRequest.js';
+import {handleForceRedirect} from './forceRedirect.js';
+import {handleDestinationNotFound} from './notFound.js';
+import {proxyHttpRequest, wrapHttpProxyHandler} from './proxyHttpRequest.js';
 import {proxyWsRequest, proxyWsServer} from './proxyWsRequest.js';
+import {getWorkingProxy} from './workingProxy.js';
+import {makeWsProxyHelpers} from './wsHelpers.js';
 
 async function createHttpsProxy(params: {
   certificate: string;
@@ -18,7 +21,7 @@ async function createHttpsProxy(params: {
   });
   let wss: WebSocketServer | undefined;
 
-  httpsProxy.on('request', wrapHandleHttpProxy(proxyHttpRequest, 'https:'));
+  httpsProxy.on('request', wrapHttpProxyHandler(proxyHttpRequest, 'https:'));
   httpsProxy.on('error', error => {
     console.log('createHttpsProxy error');
     console.error(error);
@@ -35,8 +38,13 @@ async function createHttpsProxy(params: {
   if (params.exposeWsProxyForHttps) {
     wss = new WebSocketServer({noServer: true});
     httpsProxy.on('upgrade', (req, socket, head) => {
-      const {end} = handleDestinationNotFoundWs(req, socket);
-      if (end) {
+      const proxyHelpers = makeWsProxyHelpers(socket);
+      const workingProxy = getWorkingProxy(req, kFimiproxyProtocols.wss);
+      if (handleForceRedirect(workingProxy, proxyHelpers).end) {
+        return;
+      }
+
+      if (handleDestinationNotFound(workingProxy, proxyHelpers).end) {
         return;
       }
 

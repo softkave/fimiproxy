@@ -480,4 +480,309 @@ describe('proxyWs', () => {
     ws.close();
     wss.close();
   });
+
+  test.each([
+    {
+      config: {
+        usePermanentRedirect: true,
+        getRedirectHost(): string {
+          return `redirect.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      expectedStatusCode: 308,
+      name: 'force redirect with permanent redirect from config',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `redirect.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      expectedStatusCode: 307,
+      name: 'force redirect with temporary redirect from config',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `config.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: true,
+        getRedirectHost(): string {
+          return `dest.example.com:${faker.internet.port()}`;
+        },
+      },
+      expectedStatusCode: 308,
+      name: 'force redirect with permanent redirect from destination',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `config.example.com:${faker.internet.port()}`;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string {
+          return `dest.example.com:${faker.internet.port()}`;
+        },
+      },
+      expectedStatusCode: 307,
+      name: 'force redirect with temporary redirect from destination',
+    },
+    {
+      config: {
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      destination: {
+        forceRedirect: true,
+        usePermanentRedirect: false,
+        getRedirectHost(): string | undefined {
+          return undefined;
+        },
+      },
+      expectedStatusCode: 200,
+      name: 'force redirect disabled when no redirect host configured',
+    },
+  ])(
+    'handles force redirect flow, $name',
+    async ({config: configParams, destination, expectedStatusCode}) => {
+      const originPort = faker.internet.port();
+      const configRedirectHost = configParams.getRedirectHost();
+      const destinationRedirectHost = destination.getRedirectHost();
+      const expectedRedirectHost =
+        destinationRedirectHost || configRedirectHost;
+
+      const config = await generateTestFimiproxyConfig({
+        exposeHttpProxy: true,
+        exposeWsProxyForHttp: true,
+        usePermanentRedirect: configParams.usePermanentRedirect,
+        redirectHost: configRedirectHost,
+        routes: [
+          {
+            incomingHostAndPort: `localhost:${originPort}`,
+            origin: [
+              {originPort, originProtocol: 'ws:', originHost: 'localhost'},
+            ],
+            forceRedirect: destination.forceRedirect,
+            usePermanentRedirect: destination.usePermanentRedirect,
+            redirectHost: destinationRedirectHost,
+          },
+        ],
+      });
+
+      await startFimiproxyUsingConfig(config, false);
+
+      // Setup origin WebSocket server for non-redirect cases
+      if (expectedStatusCode === 200) {
+        expressArtifacts = await createExpressHttpServer({
+          protocol: 'http:',
+          httpPort: originPort,
+        });
+        const {httpServer} = expressArtifacts;
+        assert(httpServer);
+
+        const wss = new WebSocketServer({server: httpServer});
+        const testMessage = faker.lorem.sentence();
+        const messageReceived = getDeferredPromise<string>();
+
+        wss.on('connection', ws => {
+          ws.on('message', message => {
+            const messageStr = message.toString();
+            ws.send(messageStr); // Echo back the message
+          });
+        });
+
+        // Connect to proxy
+        const ws = new WebSocket(
+          `ws://localhost:${config.httpPort}/test-path`,
+          {
+            headers: {'x-forwarded-host': `localhost:${originPort}`},
+          },
+        );
+
+        ws.on('open', () => {
+          ws.send(testMessage);
+        });
+
+        ws.on('message', message => {
+          messageReceived.resolve(message.toString());
+        });
+
+        const receivedMessage = await messageReceived.promise;
+        expect(receivedMessage).toBe(testMessage);
+
+        ws.close();
+        wss.close();
+      } else {
+        // For redirect cases, we expect the WebSocket connection to fail or be redirected
+        const ws = new WebSocket(
+          `ws://localhost:${config.httpPort}/test-path`,
+          {
+            headers: {'x-forwarded-host': `localhost:${originPort}`},
+            followRedirects: true,
+          },
+        );
+
+        const errorPromise = getDeferredPromise();
+        ws.on('error', error => {
+          errorPromise.resolve();
+        });
+
+        ws.on('unexpected-response', (request, response) => {
+          expect(response.statusCode).toBe(expectedStatusCode);
+
+          if (expectedStatusCode === 307 || expectedStatusCode === 308) {
+            const location = response.headers.location;
+            expect(location).toBe(`ws://${expectedRedirectHost}/test-path`);
+          }
+
+          errorPromise.resolve();
+        });
+
+        await errorPromise.promise;
+        expect(ws.readyState).toBe(WebSocket.CLOSED);
+      }
+    },
+  );
+
+  test.each([
+    {
+      protocol: 'ws:' as FimiporxyWsProtocol,
+      expectedRedirectProtocol: 'ws',
+      name: 'WS protocol',
+    },
+    {
+      protocol: 'wss:' as FimiporxyWsProtocol,
+      expectedRedirectProtocol: 'wss',
+      name: 'WSS protocol',
+    },
+  ])(
+    'preserves protocol in force redirect, $name',
+    async ({protocol, expectedRedirectProtocol}) => {
+      const originPort = faker.internet.port();
+      const redirectHost = `redirect.example.com:${faker.internet.port()}`;
+
+      const config = await generateTestFimiproxyConfig({
+        exposeHttpProxy: protocol === 'ws:',
+        exposeHttpsProxy: protocol === 'wss:',
+        exposeWsProxyForHttp: protocol === 'ws:',
+        exposeWsProxyForHttps: protocol === 'wss:',
+        routes: [
+          {
+            incomingHostAndPort: `localhost:${originPort}`,
+            origin: [
+              {originPort, originProtocol: protocol, originHost: 'localhost'},
+            ],
+            forceRedirect: true,
+            redirectHost,
+          },
+        ],
+      });
+
+      await startFimiproxyUsingConfig(config, false);
+
+      const proxyPort = protocol === 'ws:' ? config.httpPort : config.httpsPort;
+      const ws = new WebSocket(`${protocol}//localhost:${proxyPort}/path`, {
+        headers: {
+          'x-forwarded-host': `localhost:${originPort}`,
+        },
+        followRedirects: true,
+      });
+
+      const errorPromise = getDeferredPromise();
+      ws.on('unexpected-response', (request, response) => {
+        expect(response.statusCode).toBe(307);
+        const location = response.headers.location;
+        expect(location).toBe(
+          `${expectedRedirectProtocol}://${redirectHost}/path`,
+        );
+        errorPromise.resolve();
+      });
+
+      ws.on('error', () => {
+        errorPromise.resolve();
+      });
+
+      await errorPromise.promise;
+      expect(ws.readyState).toBe(WebSocket.CLOSED);
+    },
+  );
+
+  test('force redirect preserves URL parts based on redirectURLParts configuration', async () => {
+    const originPort = faker.internet.port();
+    const redirectHost = `redirect.example.com:${faker.internet.port()}`;
+
+    const config = await generateTestFimiproxyConfig({
+      exposeHttpProxy: true,
+      exposeWsProxyForHttp: true,
+      routes: [
+        {
+          incomingHostAndPort: `localhost:${originPort}`,
+          origin: [
+            {originPort, originProtocol: 'ws:', originHost: 'localhost'},
+          ],
+          forceRedirect: true,
+          redirectHost,
+          redirectURLParts: {
+            pathname: true,
+            search: false,
+            username: false,
+            password: false,
+          },
+        },
+      ],
+    });
+
+    await startFimiproxyUsingConfig(config, false);
+
+    const ws = new WebSocket(
+      `ws://localhost:${config.httpPort}/test/path?query=value&other=param`,
+      {
+        headers: {
+          'x-forwarded-host': `localhost:${originPort}`,
+        },
+        followRedirects: true,
+      },
+    );
+
+    const errorPromise = getDeferredPromise();
+    ws.on('unexpected-response', (request, response) => {
+      expect(response.statusCode).toBe(307);
+      const location = response.headers.location;
+      // Should preserve pathname but not search params
+      expect(location).toBe(`ws://${redirectHost}/test/path`);
+      errorPromise.resolve();
+    });
+
+    ws.on('error', () => {
+      errorPromise.resolve();
+    });
+
+    await errorPromise.promise;
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+  });
 });
