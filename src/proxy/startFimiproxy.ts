@@ -1,4 +1,3 @@
-import assert from 'node:assert';
 import {promises as fsPromises} from 'node:fs';
 import {Server} from 'node:http';
 import {FimiproxyRuntimeConfig} from '../types.js';
@@ -77,8 +76,44 @@ export async function startFimiproxyUsingConfigFile(filepath: string) {
   await startFimiproxyUsingConfig(config);
 }
 
-export async function startFimiproxyUsingProcessArgs() {
+export async function startFimiproxyUsingProcessArgs(
+  props: {
+    dontThrow?: boolean;
+  } = {
+    dontThrow: false,
+  },
+) {
+  const {dontThrow = false} = props;
   const configFilepath = process.argv[2];
-  assert(configFilepath, 'fimiproxy config filepath not provided');
+  if (!configFilepath) {
+    if (dontThrow) {
+      return false;
+    }
+    throw new Error('fimiproxy config filepath not provided');
+  }
   await startFimiproxyUsingConfigFile(configFilepath);
+  return true;
+}
+
+export const kFimiproxyConfigFilepathEnvVar = 'FIMIPROXY_CONFIG_FILEPATH';
+
+export async function startFimiproxyUsingEnvVar(
+  props: {
+    varName?: string;
+    dontThrow?: boolean;
+  } = {
+    varName: kFimiproxyConfigFilepathEnvVar,
+    dontThrow: false,
+  },
+) {
+  const {varName = kFimiproxyConfigFilepathEnvVar, dontThrow = false} = props;
+  const configFilepath = process.env[varName];
+  if (!configFilepath) {
+    if (dontThrow) {
+      return false;
+    }
+    throw new Error(`provide ${varName} env variable`);
+  }
+  await startFimiproxyUsingConfigFile(configFilepath);
+  return true;
 }
