@@ -209,9 +209,31 @@ replace `npm` with `yarn` or any other package manager of choice.
 
 ## How to run
 
+### Using Command Line Arguments
+
 - if installed globally, run `fimiproxy ./path/to/config.json`
 - if installed locally, run `npm exec fimiproxy ./path/to/config.json`
 - for one-time run, run `npx -y fimiproxy ./path/to/config.json`
+
+### Using Environment Variable
+
+Alternatively, you can start fimiproxy without passing a config filepath argument by setting the `FIMIPROXY_CONFIG_FILEPATH` environment variable:
+
+```bash
+# Set the environment variable
+export FIMIPROXY_CONFIG_FILEPATH=./path/to/config.json
+
+# Then run fimiproxy without arguments
+fimiproxy
+```
+
+Or in a single command:
+
+```bash
+FIMIPROXY_CONFIG_FILEPATH=./path/to/config.json fimiproxy
+```
+
+**Note**: The command line argument takes precedence over the environment variable. If both are provided, the command line argument will be used.
 
 ## How to use as lib
 
@@ -256,6 +278,7 @@ await fimiproxy.endFimiproxy(/** exitProcessOnShutdown */ true);
 - `startFimiproxyUsingConfigFile` — start fimiproxy using config read from filepath
   - `filepath: string` — file at filepath should be a json file, see configuration section above
 - `startFimiproxyUsingProcessArgs` — start fimiproxy using filepath picked from `process.argv[2]` see [https://nodejs.org/docs/latest/api/process.html#processargv](https://nodejs.org/docs/latest/api/process.html#processargv). example, `node your-script.js ./path/to/config.json`
+- `startFimiproxyUsingEnvVar` — start fimiproxy using filepath from environment variable (defaults to `FIMIPROXY_CONFIG_FILEPATH`)
 - `endFimiproxy` — gracefully end fimiproxy
   - `exitProcess` — defaults to `true`. calls `process.exit()` if `true`
 
