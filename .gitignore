@@ -116,3 +116,5 @@ certs/
 
 # local shenanigans
 local-only/
+
+.DS_Store
