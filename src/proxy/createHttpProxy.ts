@@ -4,6 +4,8 @@ import {WebSocketServer} from 'ws';
 import {FimiproxyRuntimeConfig, kFimiproxyProtocols} from '../types.js';
 import {handleForceRedirect} from './forceRedirect.js';
 import {handleForceUpgrade} from './forceUpgrade.js';
+import {getActiveInstance} from './instance.js';
+import {errorToLogFields, logger} from './logger.js';
 import {handleDestinationNotFound} from './notFound.js';
 import {proxyHttpRequest, wrapHttpProxyHandler} from './proxyHttpRequest.js';
 import {proxyWsRequest, proxyWsServer} from './proxyWsRequest.js';
@@ -12,6 +14,9 @@ import {makeWsProxyHelpers} from './wsHelpers.js';
 
 async function createHttpProxy(params: {exposeWsProxyForHttp?: boolean}) {
   const httpProxy = createHttpServer();
+  const instance = getActiveInstance();
+  instance?.applyServerLimits(httpProxy);
+
   let wss: WebSocketServer | undefined;
 
   if (params.exposeWsProxyForHttp) {
@@ -42,17 +47,21 @@ async function createHttpProxy(params: {exposeWsProxyForHttp?: boolean}) {
     'request',
     wrapHttpProxyHandler(proxyHttpRequest, kFimiproxyProtocols.http),
   );
+  httpProxy.on('drop', () => {
+    // Emitted when maxConnections is exceeded (Node 18+).
+    logger.warn('http connection dropped (maxConnections)');
+  });
   httpProxy.on('error', error => {
-    console.log('createHttpProxy proxy error');
-    console.error(error);
+    logger.error('http proxy error', errorToLogFields(error));
   });
-  httpProxy.on('tlsClientError', error => {
-    console.log('createHttpProxy tlsClientError');
-    console.error(error);
-  });
-  httpProxy.on('clientError', error => {
-    console.log('createHttpProxy clientError');
-    console.error(error);
+  httpProxy.on('clientError', (error, socket) => {
+    // Common under load when clients reset; keep noise down.
+    if ((error as NodeJS.ErrnoException).code === 'ECONNRESET') {
+      logger.debug('http clientError', errorToLogFields(error));
+    } else {
+      logger.error('http clientError', errorToLogFields(error));
+    }
+    socket.destroy();
   });
 
   return {httpProxy, wsProxy: wss};

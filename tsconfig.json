@@ -9,5 +9,5 @@
     "module": "Node16",
     "moduleResolution": "Node16"
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "benchmarks/**/*.ts", "benchmarks/**/*.d.ts"]
 }

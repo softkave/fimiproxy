@@ -6,10 +6,16 @@ simple HTTP | HTTPS | WS | WSS reverse proxy in node.js. currently supports:
 - proxy incoming `http:` or `https:` request to origin `http:` or `https:` servers
 - proxy incoming `ws:` or `wss:` request to origin `ws:` or `wss:` servers
 - supports graceful shutdowns
-- supports round-robin origin server selection
+- supports round-robin origin server selection (optional TCP health checks)
 - supports force upgrade `http:` to `https:` and `ws:` to `wss:`
 - supports forced redirects for host migration
 - supports URL parts preservation during redirects
+- multi-core via `node:cluster` (`workers` config; default = CPU count)
+- keep-alive outbound agents, stream backpressure, and configurable timeouts
+- async structured JSON logging (`logLevel`, optional `accessLog`)
+- optional metrics (`metricsEnabled` / localhost `adminPort` → `GET /metrics`)
+
+Requires **Node.js >= 20**.
 
 ## installation
 
@@ -34,6 +40,21 @@ replace `npm` with `yarn` or any other package manager of choice.
   "httpsPublicKey": "",
   "httpsPrivateKey": "",
   "debug": false,
+  "workers": 1,
+  "originTimeoutMs": 30000,
+  "headersTimeoutMs": 60000,
+  "requestTimeoutMs": 0,
+  "keepAliveTimeoutMs": 5000,
+  "maxSockets": 256,
+  "maxFreeSockets": 256,
+  "maxConnections": 0,
+  "accessLog": false,
+  "logLevel": "info",
+  "originHealthEnabled": false,
+  "originHealthIntervalMs": 10000,
+  "metricsEnabled": false,
+  "metricsLogIntervalMs": 60000,
+  "adminPort": "",
   "routes": [
     {
       "origin": [
@@ -78,12 +99,34 @@ replace `npm` with `yarn` or any other package manager of choice.
 - `httpsPrivateKeyFilepath` — filepath to TLS private key used with HTTPS server
 - `httpsPublicKey` — TLS certificate (public key) string used with HTTPS server. takes precedence over `httpsPublicKeyFilepath`
 - `httpsPrivateKey` — TLS private key string used with HTTPS server. takes precedence over `httpsPrivateKeyFilepath`
-- `debug` — set to `true` to enable debug logging for troubleshooting
+- `debug` — set to `true` to enable debug logging for troubleshooting (also forces `logLevel` to `debug`)
+- `workers` — number of cluster worker processes. Default: `os.availableParallelism()`. Set to `1` for a single process (recommended for tests and simple local use). When `workers > 1`, a primary process forks workers that share the listen ports; keep your process manager / deploy `count` at **1** (do not run multiple independent masters on :80/:443)
+- `originTimeoutMs` — timeout for origin HTTP requests and WebSocket opens (default `30000`)
+- `headersTimeoutMs` — inbound headers timeout (default `60000`)
+- `requestTimeoutMs` — inbound request timeout; `0` disables (default `0`)
+- `keepAliveTimeoutMs` — inbound keep-alive timeout (default `5000`)
+- `maxSockets` / `maxFreeSockets` — outbound keep-alive `http`/`https` agent pool sizes (default `256`)
+- `maxConnections` — max concurrent inbound connections; `0` = unlimited (default `0`). Excess connections are dropped by Node
+- `accessLog` — when `true`, emit structured per-request access lines (default `false`)
+- `logLevel` — `error` | `warn` | `info` | `debug` (default `info`)
+- `originHealthEnabled` — when `true`, periodically TCP-check origins and skip unhealthy ones in round-robin (default `false`)
+- `originHealthIntervalMs` — health check interval (default `10000`)
+- `metricsEnabled` — when `true`, periodically log a metrics snapshot (default `false`)
+- `metricsLogIntervalMs` — metrics log interval (default `60000`)
+- `adminPort` — if set, listen on `127.0.0.1:adminPort` and serve `GET /metrics` as JSON
 - `forceUpgradeHttpToHttps` — set to `true` to force upgrade all `http:` requests to `https:` requests globally
 - `forceUpgradeWsToWss` — set to `true` to force upgrade all `ws:` requests to `wss:` requests globally
 - `usePermanentRedirect` — set to `true` to use permanent redirect globally. The proxy server will return a `308` redirect response to the client instead of the default `307` temporary redirect response
 - `redirectHost` — default host to redirect to globally, e.g. when upgrading to HTTPS or WSS, or if the incoming host is no longer supported and all requests to it should be redirected somewhere else. if not set, the proxy server will redirect to the incoming `x-forwarded-host` or `host` header field
 - `redirectURLParts` — controls which URL parts are preserved during redirects. Can be `true` (preserve all parts), `false` (preserve only host), or an object specifying which parts to preserve (see Route-level Configuration below)
+
+### Logging
+
+Logs are **structured JSON lines** written asynchronously to stdout/stderr. Typical fields: `level`, `msg`, `time`, `pid`, optional `workerId`, plus event-specific fields (`host`, `origin`, `status`, `durationMs`, errors).
+
+- Default: startup/route configuration + errors
+- `accessLog: true`: one access line per completed HTTP/WS request
+- `debug: true` / `logLevel: "debug"`: routing and origin option details
 
 ### Route-level Configuration
 
@@ -247,6 +290,7 @@ await fimiproxy.startFimiproxyUsingConfig({
     exposeHttpsProxy: true,
     httpPort: "80",
     httpsPort: "443",
+    workers: 1,
     debug: false,
     routes: [{
       origin: [{
@@ -273,14 +317,15 @@ await fimiproxy.endFimiproxy(/** exitProcessOnShutdown */ true);
 
 - `startFimiproxyUsingConfig` — start fimiproxy using config
   - `config: FimiproxyRuntimeConfig` — see configuration above
-  - `shouldHandleGracefulShutdown` — defaults to `true`. if `true`, will listen for `SIGINT` and `SIGTERM`, and attempt to gracefully shut down the proxy server
+  - `shouldHandleGracefulShutdown` — defaults to `true`. if `true`, will listen for `SIGINT` and `SIGTERM`, and attempt to gracefully shut down the proxy server. When `false`, forces single-process mode (useful for tests)
   - `exitProcessOnShutdown` — defaults to `true`. if `shouldHandleGracefulShutdown` is `true`, will call `process.exit()` after graceful shutdown. your process may not shut down after `SIGINT` and `SIGTERM` if not `true`. currently untested behaviour (if process will shutdown or not) when set to `false` and `shouldHandleGracefulShutdown` is `true`
 - `startFimiproxyUsingConfigFile` — start fimiproxy using config read from filepath
   - `filepath: string` — file at filepath should be a json file, see configuration section above
 - `startFimiproxyUsingProcessArgs` — start fimiproxy using filepath picked from `process.argv[2]` see [https://nodejs.org/docs/latest/api/process.html#processargv](https://nodejs.org/docs/latest/api/process.html#processargv). example, `node your-script.js ./path/to/config.json`
 - `startFimiproxyUsingEnvVar` — start fimiproxy using filepath from environment variable (defaults to `FIMIPROXY_CONFIG_FILEPATH`)
-- `endFimiproxy` — gracefully end fimiproxy
+- `endFimiproxy` — gracefully end fimiproxy (returns a Promise)
   - `exitProcess` — defaults to `true`. calls `process.exit()` if `true`
+- `setupGracefulShutdown` — register SIGINT/SIGTERM handlers without shutting down immediately (used internally when `shouldHandleGracefulShutdown` is true)
 
 ## Common Use Cases
 
@@ -309,13 +354,30 @@ Gradually migrate from old domain to new domain while preserving SEO:
 
 ### 4. Load Balancing
 
-Distribute traffic across multiple backend servers using round-robin selection.
+Distribute traffic across multiple backend servers using round-robin selection. Enable `originHealthEnabled` to skip origins that fail periodic TCP checks (if all are unhealthy, fimiproxy falls back to the full origin list so traffic is not hard-stopped).
+
+## Production performance notes
+
+- Prefer `workers` equal to CPU count on production hosts that terminate TLS (HTTPS benefits most from multi-core).
+- Keep deploy/process-manager instance count at **1**; multi-core is internal cluster, not multiple masters binding the same privileged ports.
+- Leave `accessLog` off unless you need it; errors still log at `error` level.
+- Tune `maxSockets` for busy localhost fan-out; set `maxConnections` if you need overload protection.
+- Run a quick load check with `npm run bench` (see [benchmarks](./benchmarks)).
+
+## Benchmarks
+
+```bash
+npm run bench
+npm run bench -- --duration 20 --connections 100
+```
+
+The in-process harness uses `workers: 1`. To compare multi-worker RPS, start fimiproxy via the CLI with `"workers": N` in config and point `autocannon` (or similar) at that process.
 
 ## Troubleshooting
 
 ### Enable Debug Mode
 
-Set `debug: true` in your configuration or use the `FIMIPROXY_DEBUG=true` environment variable to see detailed logs.
+Set `debug: true` in your configuration or use the `FIMIPROXY_DEBUG=true` environment variable to see detailed logs. Alternatively set `"logLevel": "debug"`.
 
 ### Common Issues
 
@@ -323,6 +385,7 @@ Set `debug: true` in your configuration or use the `FIMIPROXY_DEBUG=true` enviro
 
    - Check if another process is using the port: `lsof -i :PORT`
    - Use different ports in your configuration
+   - Do not raise external process `count` above 1 for the same :80/:443 — use `workers` instead
 
 2. **SSL Certificate Issues**:
 
@@ -335,6 +398,7 @@ Set `debug: true` in your configuration or use the `FIMIPROXY_DEBUG=true` enviro
    - Ensure `exposeWsProxyForHttp` or `exposeWsProxyForHttps` is enabled
    - Verify origin server supports WebSocket protocol
    - Check for protocol mismatch (ws vs wss)
+   - Origin open failures time out after `originTimeoutMs`
 
 4. **Host Header Issues**:
    - Use `overrideHost` if the origin server expects specific host headers
@@ -342,5 +406,6 @@ Set `debug: true` in your configuration or use the `FIMIPROXY_DEBUG=true` enviro
 
 ### Limitations
 
-- Cannot sustain multiple start calls, because current state is managed using a module-global variable. We'll eventually transition to a class-based encapsulation system, so stick around (if you're versed in Typescript, you can contribute to this effort). Multiple start calls will either lead to existing servers being garbage collected or memory leak, I haven't tested it. So, call `endFimiproxy` before making another start call. Start calls are calls to `startFimiproxyUsingConfig`, `startFimiproxyUsingConfigFile`, or `startFimiproxyUsingProcessArgs`
-- Round-robin load balancing is simple rotation, not weighted or health-checked
+- Call `endFimiproxy()` before another `startFimiproxy*` in the same process. State is held on a per-process `FimiproxyInstance`; overlapping starts without teardown are unsupported.
+- Round-robin is simple rotation (not weighted or sticky). Optional TCP health checks can skip unhealthy origins when `originHealthEnabled` is true.
+- Wildcard hosts (`*.example.com`) are documented historically; matching is exact `incomingHostAndPort` lookup today.

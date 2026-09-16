@@ -234,6 +234,7 @@ export async function generateTestFimiproxyConfig(
     routes: [],
     httpsPublicKey: credentials?.publicKey,
     httpsPrivateKey: credentials?.privateKey,
+    workers: 1,
     ...seed,
   };
 }

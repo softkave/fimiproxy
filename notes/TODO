@@ -2,24 +2,29 @@
 
 ## Now
 
-- correlated log by req + res, keep socket and start buffer on start request for correlation
-- multi-instance
 - runtime config changes
-- cannot send headers after they are sent bug
+- correlated log by req + res (partially: structured accessLog + durationMs)
 
 ## Later
 
-- address TODOs in code
 - no downtime config changes
-- use multiple threads or processes
-- benchmarks and load tests
-- make into class so we can have multiple fimiproxy instances
 - prefer https over http when there's both origin servers
-- proper error handling
 - return artifacts from start calls so callers can perform explicit graceful shutdowns
 - add validation checks to config file, and config
-- prevent multiple start calls until transition to class-based encapsulation
 - what to do about CONNECT calls
-- better and encompassing error logging, usage logging, and metrics logging
 - allow loading JS scripts for dynamic routing
 - better code organization
+- weighted / sticky load balancing
+
+## Done (performance work)
+
+- multi-process via node:cluster (`workers` config)
+- FimiproxyInstance encapsulation (per-process instance state)
+- stream.pipeline backpressure on HTTP proxy path
+- keep-alive outbound agents
+- inbound/outbound timeouts
+- async structured JSON logging (`logLevel`, `accessLog`)
+- WS open timeout + send backpressure + mutual close
+- maxConnections, origin health checks, basic metrics (/metrics + periodic log)
+- benchmarks harness (`npm run bench`)
+- destroy-on-error / avoid double writeHead

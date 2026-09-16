@@ -4,6 +4,8 @@ import {WebSocketServer} from 'ws';
 import {FimiproxyRuntimeConfig, kFimiproxyProtocols} from '../types.js';
 import {prepareHttpsCredentials} from './config.js';
 import {handleForceRedirect} from './forceRedirect.js';
+import {getActiveInstance} from './instance.js';
+import {errorToLogFields, logger} from './logger.js';
 import {handleDestinationNotFound} from './notFound.js';
 import {proxyHttpRequest, wrapHttpProxyHandler} from './proxyHttpRequest.js';
 import {proxyWsRequest, proxyWsServer} from './proxyWsRequest.js';
@@ -19,20 +21,28 @@ async function createHttpsProxy(params: {
     key: params.privateKey,
     cert: params.certificate,
   });
+  const instance = getActiveInstance();
+  instance?.applyServerLimits(httpsProxy);
+
   let wss: WebSocketServer | undefined;
 
   httpsProxy.on('request', wrapHttpProxyHandler(proxyHttpRequest, 'https:'));
+  httpsProxy.on('drop', () => {
+    logger.warn('https connection dropped (maxConnections)');
+  });
   httpsProxy.on('error', error => {
-    console.log('createHttpsProxy error');
-    console.error(error);
+    logger.error('https proxy error', errorToLogFields(error));
   });
   httpsProxy.on('tlsClientError', error => {
-    console.log('createHttpsProxy tlsClientError');
-    console.error(error);
+    logger.error('https tlsClientError', errorToLogFields(error));
   });
-  httpsProxy.on('clientError', error => {
-    console.log('createHttpsProxy clientError');
-    console.error(error);
+  httpsProxy.on('clientError', (error, socket) => {
+    if ((error as NodeJS.ErrnoException).code === 'ECONNRESET') {
+      logger.debug('https clientError', errorToLogFields(error));
+    } else {
+      logger.error('https clientError', errorToLogFields(error));
+    }
+    socket.destroy();
   });
 
   if (params.exposeWsProxyForHttps) {
